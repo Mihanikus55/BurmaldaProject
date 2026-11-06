@@ -20,6 +20,17 @@ class ClientModel(Base):
     id = Column(String(64), primary_key=True)
     kyc_status = Column(String(32), nullable=False, default="VERIFIED")
     pd_blob = Column(Text, nullable=False)
+    # ЭТАП 1: публичная точка клиента S_pub = s*G.
+    # Лежит открыто и это нормально: из точки секрет s не вычисляется.
+    # Именно к ней регулятор привязывает KYC и её же подписывает в справке.
+    s_pub = Column(String(128), nullable=False, default="")
+    # ЭТАП 2: флаги допуска лежат открыто и это осознанно — булевы значения
+    # не являются персональными данными. Именно их отдаёт регулятор
+    # букмекеру при проверке токена, а имя и паспорт остаются в pd_blob
+    # под ключом, разрезанным Шамиром.
+    adult = Column(Boolean, nullable=False, default=True)
+    not_excluded = Column(Boolean, nullable=False, default=True)
+    limits_ok = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -95,15 +106,61 @@ class EventModel(Base):
     name = Column(String(256), nullable=False)
     status = Column(String(32), nullable=False, default="OPEN")
     outcome = Column(String(64), nullable=True)
+    # ЭТАП 3: исход приходит от оракула подписанным. Регулятор не может
+    # объявить результат сам — иначе он бы «назначал» нужный исход
+    # и перераспределял деньги.
+    outcome_source = Column(String(64), nullable=False, default="")
+    outcome_sig = Column(Text, nullable=False, default="")
+    settled_at = Column(DateTime, nullable=True)
+
+
+class SettlementModel(Base):
+    """
+    ЭТАП 3: подписанная регулятором расчётная квитанция по каждой ставке.
+
+    Клиент и букмекер могут предъявить её как доказательство того, что
+    и сколько было выплачено. Подпись Ed25519 над каноническим JSON.
+    """
+    __tablename__ = "settlements"
+    id = Column(String(64), primary_key=True)
+    bet_id = Column(String(64), nullable=False, index=True)
+    token = Column(String(128), nullable=False)
+    event_id = Column(String(64), nullable=False)
+    outcome = Column(String(64), nullable=False)
+    result = Column(String(32), nullable=False)        # WON, LOST, VOIDED
+    amount = Column(BigInteger, nullable=False)        # движение по счёту клиента, в копейках
+    regulator_sig = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class AuditAnchorModel(Base):
+    """
+    ЭТАП 3: опубликованный корень хэш-цепочки.
+
+    Пока корень не опубликован, журнал теоретически можно переписать
+    целиком. После публикации подделка становится заметной: достаточно
+    сверить пересчитанный корень с тем, что подписан и сохранён здесь.
+    """
+    __tablename__ = "audit_anchors"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    seq = Column(Integer, nullable=False)
+    root_hash = Column(String(128), nullable=False)
+    signature = Column(Text, nullable=False)
+    ts = Column(String(32), nullable=False)
 
 
 class DisclosureModel(Base):
+    """ЭТАП 4: заявка на раскрытие. Одна заявка — одна запись, не вся база."""
     __tablename__ = "disclosures"
     id = Column(String(64), primary_key=True)
-    subject = Column(String(128), nullable=False)
+    subject = Column(String(128), nullable=False)          # токен, по которому идёт запрос
+    subject_client_id = Column(String(64), nullable=False, default="")
+    kind = Column(String(32), nullable=False, default="AML")   # AML, DISPUTE, KEY_RECOVERY
+    requester = Column(String(64), nullable=False, default="audit_department")
     reason = Column(Text, nullable=False)
     status = Column(String(32), nullable=False, default="PENDING_SECOND_SHARE")
     created_at = Column(DateTime, default=datetime.utcnow)
+    resolved_at = Column(DateTime, nullable=True)
 
 
 class DisclosureShareModel(Base):
@@ -112,6 +169,11 @@ class DisclosureShareModel(Base):
     disclosure_id = Column(String(64), nullable=False, index=True)
     party = Column(String(32), nullable=False)
     payload = Column(Text, nullable=False)
+    # ЭТАП 4: подпись стороны над (disclosure_id, party, payload).
+    # Нужна, чтобы потом можно было доказать, КТО именно согласился
+    # на раскрытие, и чтобы никто не подложил чужую долю от его имени.
+    signature = Column(Text, nullable=False, default="")
+    created_at = Column(DateTime, default=datetime.utcnow)
     __table_args__ = (UniqueConstraint("disclosure_id", "party", name="uq_disc_party"),)
 
 
@@ -121,6 +183,9 @@ class AuditLogModel(Base):
     ts = Column(String(32), nullable=False)
     actor = Column(String(64), nullable=False)
     action = Column(String(64), nullable=False)
+    # ЭТАП 3: сам payload тоже сохраняем. Без него проверить можно только
+    # связность цепочки, но не то, что содержимое записи не подменили.
+    payload_json = Column(Text, nullable=False, default="{}")
     payload_hash = Column(String(128), nullable=False)
     prev_hash = Column(String(128), nullable=False)
     current_hash = Column(String(128), nullable=False)
@@ -137,6 +202,28 @@ class BmTokenExposureModel(Base):
     won_count = Column(Integer, nullable=False, default=0)
 
 
+class BmQuoteModel(Base):
+    """
+    ЭТАП 2: котировка букмекера.
+
+    Живёт между запросом коэффициента и подачей ставки. Клиент подписывает
+    именно quote_id, поэтому букмекер не может подменить коэффициент после
+    того, как клиент согласился.
+    """
+    __tablename__ = "bm_quotes"
+    id = Column(String(64), primary_key=True)
+    token = Column(String(128), nullable=False, index=True)
+    bookmaker_id = Column(String(64), nullable=False, default="bk_alpha")
+    event_id = Column(String(64), nullable=False)
+    selection = Column(String(64), nullable=False)
+    stake = Column(BigInteger, nullable=False)
+    odds = Column(String(32), nullable=False)
+    odds_commitment = Column(String(128), nullable=False)
+    odds_salt = Column(String(64), nullable=False)      # раскрывается после исхода
+    status = Column(String(32), nullable=False, default="OPEN")  # OPEN, USED, EXPIRED
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class BmBetModel(Base):
     __tablename__ = "bm_bets"
     id = Column(String(64), primary_key=True)
@@ -147,6 +234,10 @@ class BmBetModel(Base):
     stake = Column(BigInteger, nullable=False)
     odds = Column(String(32), nullable=False)
     odds_commitment = Column(String(128), nullable=False)
+    # ЭТАП 2: соль обязательства и подпись клиента по его токену.
+    # Соль пустая, пока событие не рассчитано, — в этом и смысл обязательства.
+    odds_salt = Column(String(64), nullable=False, default="")
+    client_sig = Column(Text, nullable=False, default="")
     status = Column(String(32), nullable=False, default="ACCEPTED")
     bookmaker_sig = Column(Text, nullable=False)
 
@@ -160,9 +251,16 @@ class WalletStateModel(Base):
     full_name = Column(String(256), nullable=False)
     passport = Column(String(64), nullable=False)
     age = Column(Integer, nullable=False)
+    # ЭТАП 1: секрет s живёт ТОЛЬКО здесь, в кошельке клиента.
+    # В проде это место — Keychain на iOS или Keystore на Android,
+    # а не строка в базе: в SQLite он лежит лишь потому, что все четыре
+    # сервиса в демо работают в одном процессе.
     client_secret_s = Column(String(128), nullable=False)
+    s_pub = Column(String(128), nullable=False, default="")
+    schnorr_proof = Column(Text, nullable=False, default="")
     client_share = Column(Text, nullable=False)
     credential_id = Column(String(64), nullable=False)
+    credential_blob = Column(Text, nullable=False, default="")
     token_alpha = Column(String(128), nullable=False)
     token_beta = Column(String(128), nullable=False)
     zk_alpha = Column(Text, nullable=False)
