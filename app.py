@@ -1,5 +1,4 @@
-import json
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template
 
 from common.crypto_ports import custody_port, sealer_port
 from services.arbiter import arbiter_bp
@@ -16,7 +15,6 @@ from services.regulator import append_audit, get_or_create_account, record_doubl
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
-# Регистрация независимых сервисов как Flask Blueprints на едином порту :5000
 app.register_blueprint(regulator_bp, url_prefix="/api/regulator")
 app.register_blueprint(bookmaker_bp, url_prefix="/api/bookmaker")
 app.register_blueprint(client_bp, url_prefix="/api/client")
@@ -30,11 +28,10 @@ def index():
 
 @app.route("/api/demo/deposit-both", methods=["POST"])
 def demo_deposit_both():
-    """Шаг 2: Пополнение баланса клиента (3 000 ₽) и ликвидности букмекера (10 000 ₽)."""
     with SessionLocal() as session:
         ident = session.query(WalletIdentityModel).first()
         if not ident:
-            return jsonify({"error": "Сначала выполните Шаг 1 (Регистрация)"}), 400
+            return jsonify({"error": "Сначала зарегистрируйте клиента"}), 400
 
         cli_owner = f"client:{ident.client_id}"
         bk_owner = "bookmaker:bk_alpha"
@@ -52,8 +49,8 @@ def demo_deposit_both():
         bk_acc.available += bk_amount
         bk_acc.version += 1
 
-        record_double_entry(session, "external:bank", cli_owner, cli_amount, "dep_cli_step2")
-        record_double_entry(session, "external:bank", bk_owner, bk_amount, "dep_bk_step2")
+        record_double_entry(session, "external:bank", cli_owner, cli_amount)
+        record_double_entry(session, "external:bank", bk_owner, bk_amount)
 
         append_audit(session, "regulator", "DEPOSIT_AND_LIQUIDITY_FUNDED", {
             "client_deposit": cli_amount,
@@ -75,11 +72,13 @@ def demo_reset():
 
 @app.route("/api/state", methods=["GET"])
 def get_full_state():
-    """Агрегированный срез состояния всех 4 микросервисов и таблиц SQLite для UI и Инспектора."""
     with SessionLocal() as session:
         ident = session.query(WalletIdentityModel).first()
-        tokens = {t.bookmaker_id: {"token": t.token, "zk_proof": t.zk_token_proof}
-                  for t in session.query(WalletTokenModel).all()}
+        tokens = {}
+        if ident:
+            for t in session.query(WalletTokenModel).filter_by(client_id=ident.client_id).all():
+                tokens[t.bookmaker_id] = {"token": t.token, "zk_proof": t.zk_token_proof}
+
         receipts = [{
             "bet_id": r.bet_id,
             "token": r.token,
@@ -92,7 +91,12 @@ def get_full_state():
         client_owner = f"client:{ident.client_id}" if ident else "client:unregistered"
         cli_acc = session.query(AccountModel).filter_by(owner_ref=client_owner).first()
         bk_acc = session.query(AccountModel).filter_by(owner_ref="bookmaker:bk_alpha").first()
-        house_acc = session.query(AccountModel).filter_by(owner_ref="house:fees").first()
+
+        # Суммарно по всем клиентам (для Кейса 2 с 10 игроками)
+        all_client_accs = session.query(AccountModel).filter(AccountModel.owner_type == "client").all()
+        total_clients_avail = sum(a.available for a in all_client_accs)
+        total_clients_held = sum(a.held for a in all_client_accs)
+        clients_count = session.query(ClientModel).count()
 
         reg_share_rec = session.query(CustodyShareModel).filter_by(party="regulator").first()
         arb_share_rec = session.query(ArbiterShareModel).first()
@@ -103,14 +107,6 @@ def get_full_state():
             "client_ref_sealed": l.client_ref_sealed,
         } for l in session.query(LinkModel).all()]
 
-        holds_list = [{
-            "id": h.id,
-            "owner_ref": h.owner_ref,
-            "amount": h.amount,
-            "status": h.status,
-            "ref_type": h.ref_type,
-        } for h in session.query(HoldModel).filter_by(status="ACTIVE").all()]
-
         all_holds_dump = [{
             "id": h.id,
             "owner_ref": h.owner_ref,
@@ -119,12 +115,19 @@ def get_full_state():
             "ref_type": h.ref_type,
         } for h in session.query(HoldModel).all()]
 
+        accounts_dump = [{
+            "owner_ref": a.owner_ref,
+            "available": a.available,
+            "held": a.held,
+            "version": a.version,
+        } for a in session.query(AccountModel).all()]
+
         ledger_list = [{
             "tx_id": e.tx_id,
             "account_id": e.account_id,
             "direction": e.direction,
             "amount": e.amount,
-        } for e in session.query(LedgerEntryModel).order_by(LedgerEntryModel.id.desc()).limit(15).all()]
+        } for e in session.query(LedgerEntryModel).order_by(LedgerEntryModel.id.desc()).limit(30).all()]
 
         exposures_list = [{
             "token": x.token,
@@ -132,17 +135,6 @@ def get_full_state():
             "total_staked": x.total_staked,
             "won_count": x.won_count,
         } for x in session.query(BmTokenExposureModel).all()]
-
-        bm_bets_list = [{
-            "id": b.id,
-            "quote_id": b.quote_id,
-            "token": b.token,
-            "selection": b.selection,
-            "stake": b.stake,
-            "odds": b.odds,
-            "odds_commitment": b.odds_commitment,
-            "status": b.status,
-        } for b in session.query(BmBetModel).order_by(BmBetModel.id.desc()).all()]
 
         ev = session.query(EventModel).filter_by(id="ev_final_2026").first()
 
@@ -157,7 +149,10 @@ def get_full_state():
                 recovered_dek = custody_port.combine_shares(share_map)
                 cli_rec = session.query(ClientModel).first()
                 if cli_rec and recovered_dek:
-                    revealed_person = sealer_port.unseal(recovered_dek, cli_rec.pd_blob)
+                    try:
+                        revealed_person = sealer_port.unseal(recovered_dek, cli_rec.pd_blob)
+                    except Exception:
+                        revealed_person = None
             disc_data = {
                 "id": disc.id,
                 "subject": disc.subject_id,
@@ -177,28 +172,29 @@ def get_full_state():
             "current_hash": a.current_hash,
         } for a in session.query(AuditLogModel).order_by(AuditLogModel.seq.desc()).all()]
 
-        arb_audit = [{
-            "ts": a.ts.strftime("%H:%M:%S"),
-            "action": a.action,
-            "details": a.details,
-        } for a in session.query(ArbiterAuditModel).order_by(ArbiterAuditModel.id.desc()).all()]
+        custody_dump = [{
+            "client_id": c.client_id,
+            "party": c.party,
+            "shamir_share": c.payload[:36] + "...",
+        } for c in session.query(CustodyShareModel).all()]
 
         return jsonify({
+            "summary": {
+                "clients_count": clients_count,
+                "total_clients_available": total_clients_avail,
+                "total_clients_held": total_clients_held,
+                "bets_count": session.query(BetModel).count(),
+            },
             "wallet": {
                 "registered": bool(ident),
                 "client_id": ident.client_id if ident else "",
                 "full_name": ident.full_name if ident else "",
                 "passport": ident.passport if ident else "",
-                "age": ident.age if ident else 23,
                 "client_secret": ident.client_secret_s if ident else "",
-                "client_share": ident.client_share if ident else "",
+                "client_share": (ident.client_share[:36] + "...") if ident else "",
                 "tokens": {
                     "bk_alpha": tokens.get("bk_alpha", {}).get("token", ""),
                     "bk_beta": tokens.get("bk_beta", {}).get("token", ""),
-                },
-                "zk_proofs": {
-                    "bk_alpha": tokens.get("bk_alpha", {}).get("zk_proof", ""),
-                    "bk_beta": tokens.get("bk_beta", {}).get("zk_proof", ""),
                 },
                 "receipts": receipts,
             },
@@ -207,40 +203,30 @@ def get_full_state():
                     "owner_ref": client_owner,
                     "available": cli_acc.available if cli_acc else 0,
                     "held": cli_acc.held if cli_acc else 0,
-                    "version": cli_acc.version if cli_acc else 1,
                 },
                 "bookmaker": {
                     "owner_ref": "bookmaker:bk_alpha",
                     "available": bk_acc.available if bk_acc else 0,
                     "held": bk_acc.held if bk_acc else 0,
-                    "version": bk_acc.version if bk_acc else 1,
                 },
-                "house": {
-                    "owner_ref": "house:fees",
-                    "available": house_acc.available if house_acc else 0,
-                    "held": house_acc.held if house_acc else 0,
-                    "version": house_acc.version if house_acc else 1,
-                },
+                "all": accounts_dump,
             },
             "regulator": {
-                "regulator_share": reg_share_rec.payload if reg_share_rec else "",
+                "regulator_share": (reg_share_rec.payload[:36] + "...") if reg_share_rec else "",
                 "links": links_list,
-                "active_holds": holds_list,
-                "all_holds": all_holds_dump,
+                "holds": all_holds_dump,
                 "ledger": ledger_list,
                 "event_status": ev.status if ev else "OPEN",
                 "last_outcome": ev.outcome if ev else None,
                 "audit_logs": audit_logs,
                 "audit_root": audit_logs[0]["current_hash"] if audit_logs else "0" * 64,
+                "custody_shares": custody_dump,
             },
             "bookmaker": {
                 "exposures": exposures_list,
-                "bets": bm_bets_list,
             },
             "arbiter": {
-                "client_id": arb_share_rec.client_id if arb_share_rec else "",
-                "stored_share": arb_share_rec.share_payload if arb_share_rec else "",
-                "audit": arb_audit,
+                "stored_share": (arb_share_rec.share_payload[:36] + "...") if arb_share_rec else "",
             },
             "disclosure": disc_data,
         })
@@ -249,7 +235,6 @@ def get_full_state():
 if __name__ == "__main__":
     init_db()
     print("=" * 72)
-    print(" Платформа «Приватные букмекерские ставки» успешно запущена!")
-    print(" Откройте в браузере: http://127.0.0.1:5000")
+    print(" Платформа «Приватные ставки + SMPC» (v2) запущена на http://127.0.0.1:5000")
     print("=" * 72)
-    app.run(host="127.0.0.1", port=5000, debug=False)
+    app.run(host="127.0.0.1", port=5000, debug=True)

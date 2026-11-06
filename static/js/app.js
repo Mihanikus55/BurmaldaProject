@@ -1,350 +1,316 @@
-// Глобальное состояние фронтенда
 let appState = null;
-let currentUnitMode = 'both'; // 'rub' | 'kop' | 'both'
-let isAdvancedOpen = false;
-let selectedSqlTable = 'links';
+let currentCase = 1;
+let isDbOpen = false;
+let activeDbTab = 'links';
 
-function formatMoney(kopecks, mode = currentUnitMode) {
+function fmtRub(kopecks) {
     const num = Number(kopecks || 0);
-    const rub = (num / 100).toLocaleString('ru-RU', {
-        minimumFractionDigits: num % 100 === 0 ? 0 : 2,
-        maximumFractionDigits: 2
-    });
-    const kop = num.toLocaleString('ru-RU');
-    if (mode === 'rub') return `${rub} ₽`;
-    if (mode === 'kop') return `${kop} коп.`;
-    return `${rub} ₽ (${kop} коп.)`;
+    return (num / 100).toLocaleString('ru-RU') + ' ₽';
 }
 
-function setBanner(message, endpoint = 'OK') {
-    document.getElementById('banner-text').innerText = message;
-    document.getElementById('banner-endpoint').innerText = endpoint;
+function setStatus(msg, code = 'HTTP 200') {
+    document.getElementById('status-message').innerText = msg;
+    document.getElementById('status-code').innerText = code;
 }
 
-function setUnitMode(mode) {
-    currentUnitMode = mode;
-    ['rub', 'kop', 'both'].forEach(m => {
-        const btn = document.getElementById(`unit-${m}`);
-        if (m === mode) {
-            btn.className = 'px-2.5 py-1 rounded-md font-semibold transition bg-indigo-600 text-white';
+function highlightNodes(nodeIds) {
+    ['node-client', 'node-bookmaker', 'node-regulator', 'node-arbiter'].forEach(id => {
+        const el = document.getElementById(id);
+        if (nodeIds.includes(id)) {
+            el.classList.add('node-active');
         } else {
-            btn.className = 'px-2.5 py-1 rounded-md font-semibold transition text-slate-400 hover:text-white';
+            el.classList.remove('node-active');
         }
     });
-    if (appState) renderAll(appState);
 }
 
-function toggleAdvancedMode() {
-    isAdvancedOpen = !isAdvancedOpen;
-    const container = document.getElementById('advanced-inspector-container');
-    const badge = document.getElementById('advanced-status-badge');
-    if (isAdvancedOpen) {
-        container.classList.remove('hidden');
-        badge.innerText = 'ВКЛ';
-        badge.className = 'px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono text-[10px]';
+function switchCaseMode(caseNum) {
+    currentCase = caseNum;
+    const p1 = document.getElementById('panel-case-1');
+    const p2 = document.getElementById('panel-case-2');
+    const t1 = document.getElementById('tab-case-1');
+    const t2 = document.getElementById('tab-case-2');
+
+    if (caseNum === 1) {
+        p1.classList.remove('hidden');
+        p2.classList.add('hidden');
+        t1.className = 'px-3 py-1.5 rounded-md font-semibold bg-slate-800 text-white transition cursor-pointer';
+        t2.className = 'px-3 py-1.5 rounded-md font-semibold text-slate-400 hover:text-slate-200 transition cursor-pointer';
     } else {
-        container.classList.add('hidden');
-        badge.innerText = 'ВЫКЛ';
-        badge.className = 'px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-mono text-[10px]';
+        p1.classList.add('hidden');
+        p2.classList.remove('hidden');
+        t2.className = 'px-3 py-1.5 rounded-md font-semibold bg-slate-800 text-white transition cursor-pointer';
+        t1.className = 'px-3 py-1.5 rounded-md font-semibold text-slate-400 hover:text-slate-200 transition cursor-pointer';
     }
 }
 
-function selectSqlTable(tableName) {
-    selectedSqlTable = tableName;
-    ['links', 'accounts', 'holds', 'bm_token_exposure', 'custody_shares'].forEach(t => {
-        const btn = document.getElementById(`tab-sql-${t}`);
+function toggleDbInspector() {
+    isDbOpen = !isDbOpen;
+    const panel = document.getElementById('db-inspector-panel');
+    const badge = document.getElementById('db-badge');
+    if (isDbOpen) {
+        panel.classList.remove('hidden');
+        badge.innerText = 'ОТКРЫТ';
+        badge.className = 'px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono text-[10px]';
+        if (appState) renderDbTable(appState);
+    } else {
+        panel.classList.add('hidden');
+        badge.innerText = 'СКРЫТ';
+        badge.className = 'px-1.5 py-0.5 rounded bg-slate-900 text-slate-400 font-mono text-[10px]';
+    }
+}
+
+function switchDbTab(tabName) {
+    activeDbTab = tabName;
+    ['links', 'holds', 'accounts', 'bm_token_exposure', 'ledger', 'audit_log'].forEach(t => {
+        const btn = document.getElementById(`dbtab-${t}`);
         if (btn) {
-            btn.className = (t === tableName)
-                ? 'px-3 py-1 rounded bg-indigo-600 text-white cursor-pointer'
-                : 'px-3 py-1 rounded bg-slate-800 text-slate-300 cursor-pointer';
+            btn.className = (t === tabName)
+                ? 'px-3 py-1.5 rounded bg-slate-200 text-slate-900 font-bold cursor-pointer'
+                : 'px-3 py-1.5 rounded bg-[#0D1117] text-slate-400 border border-slate-800 cursor-pointer';
         }
     });
-    if (appState) renderSqlInspector(appState);
+    if (appState) renderDbTable(appState);
 }
 
 async function fetchState() {
-    try {
-        const res = await fetch('/api/state');
-        appState = await res.json();
-        renderAll(appState);
-    } catch (err) {
-        console.error('Ошибка получения состояния:', err);
+    const res = await fetch('/api/state');
+    appState = await res.json();
+    renderUI(appState);
+}
+
+// =============================================================================
+// КЕЙС 1: ОДИНОЧНАЯ СТАВКА И ПОШАГОВЫЙ ПРОЦЕСС
+// =============================================================================
+async function runCase1Bet() {
+    document.getElementById('disclosure-banner').classList.add('hidden');
+    document.getElementById('flow-indicator').innerText = 'Клиент → Регулятор (KYC + AES-GCM) → Букмекер → Эскроу (Холд)';
+    highlightNodes(['node-client', 'node-bookmaker', 'node-regulator']);
+
+    if (!appState || !appState.wallet.registered) {
+        await fetch('/api/client/v1/register-full', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ full_name: 'Иванов Иван Иванович', passport: '4018 123456', age: 23 })
+        });
     }
-}
-
-// =============================================================================
-// 3 ГЛАВНЫЕ КНОПКИ ПРЕЗЕНТАЦИОННОГО РЕЖИМА
-// =============================================================================
-async function runQuickPresentationStep1() {
-    try {
-        document.getElementById('solo-error-box').classList.add('hidden');
-        document.getElementById('revealed-success-box').classList.add('hidden');
-
-        // 1. Если ещё не зарегистрирован — выполняем KYC + генерацию токенов
-        if (!appState || !appState.wallet.registered) {
-            await runStep1KYC();
-        }
-        // 2. Если на балансе меньше 1 000 ₽ — пополняем депозит клиента (3 000 ₽) и БК (10 000 ₽)
-        await fetchState();
-        if (appState.accounts.client.available < 100000) {
-            await runStep2Deposits();
-        }
-        // 3. Делаем ставку 1 000 ₽ под кэф 2.40
-        await runStep3Bet();
-        setBanner(
-            '✅ Шаг 1 выполнен: Игрок зарегистрирован под псевдонимом. В Эскроу заморожено 2 400 ₽ (1 000 ₽ ставка игрока + 1 400 ₽ чистый риск букмекера).',
-            'POST /api/client/v1/place-bet'
-        );
-    } catch (e) {
-        alert('Ошибка Шага 1: ' + e.message);
+    await fetchState();
+    if (appState.accounts.client.available < 100000) {
+        await fetch('/api/demo/deposit-both', { method: 'POST' });
     }
-}
-
-async function runQuickPresentationStep2() {
-    await settleMatch('HOME_WIN');
-    setBanner(
-        '🏆 Шаг 2 выполнен: Матч завершён победой! Эскроу автоматически выплатил 2 400 ₽ игроку. Итоговый баланс игрока: 4 400 ₽ (+1 400 ₽ чистой прибыли).',
-        'POST /api/regulator/v1/events/ev_final_2026/outcome'
-    );
-}
-
-async function runQuickPresentationStep3() {
-    const res = await fetch('/api/regulator/v1/disclosures/solo-attempt', { method: 'POST' });
-    const data = await res.json();
-    const errBox = document.getElementById('solo-error-box');
-    document.getElementById('solo-error-text').innerText = data.message;
-    errBox.classList.remove('hidden');
-    setBanner(
-        '🔒 Шаг 3 (Проверка защиты): Попытка регулятора раскрыть имя игрока в одиночку заблокирована (HTTP 403). Нажмите фиолетовую кнопку ордера Арбитра!',
-        'POST /api/regulator/v1/disclosures/solo-attempt -> 403 FORBIDDEN'
-    );
-    await fetchState();
-}
-
-// =============================================================================
-// ДЕТАЛЬНЫЕ ДЕЙСТВИЯ МИКРОСЕРВИСОВ
-// =============================================================================
-async function runStep1KYC() {
-    const fullName = document.getElementById('inp-name')?.value || 'Иванов Иван Иванович';
-    const passport = document.getElementById('inp-passport')?.value || '4018 123456';
-    const res = await fetch('/api/client/v1/register-full', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ full_name: fullName, passport: passport, age: 23 })
-    });
-    if (!res.ok) throw new Error('Ошибка регистрации KYC');
-    setBanner('✅ KYC пройден: ключ разделён на 3 доли Шамира, выпущены несвязываемые токены P_ALPHA и P_BETA.', 'POST /api/client/v1/register-full');
-    await fetchState();
-}
-
-async function runStep2Deposits() {
-    const res = await fetch('/api/demo/deposit-both', { method: 'POST' });
-    const d = await res.json();
-    if (!res.ok) {
-        alert(d.error || 'Ошибка депозита');
-        return;
-    }
-    setBanner('✅ Депозиты внесены: Клиент +3 000 ₽ (300 000 коп.), Букмекер +10 000 ₽ (1 000 000 коп.) в эскроу.', 'POST /api/demo/deposit-both');
-    await fetchState();
-}
-
-async function runStep3Bet() {
-    const res = await fetch('/api/client/v1/place-bet', {
+    const betRes = await fetch('/api/client/v1/place-bet', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ selection: 'HOME_WIN', stake: 100000, event_id: 'ev_final_2026' })
     });
-    const d = await res.json();
-    if (!res.ok) {
-        alert(d.error || 'Ошибка размещения ставки');
-        return;
-    }
+    const betData = await betRes.json();
+    setStatus(`Ставка ${betData.bet_id} принята под токеном ${betData.token}. В эскроу заморожено: 1 000 ₽ клиента + 1 400 ₽ риска БК.`, 'HTTP 201');
     await fetchState();
 }
 
-async function settleMatch(outcome) {
+async function runCase1Settle() {
+    document.getElementById('flow-indicator').innerText = 'Регулятор (Эскроу) → Распределение холдов → Клиент (+2 400 ₽)';
+    highlightNodes(['node-regulator', 'node-client']);
     const res = await fetch('/api/regulator/v1/events/ev_final_2026/outcome', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ outcome: outcome })
+        body: JSON.stringify({ outcome: 'HOME_WIN' })
     });
-    await res.json();
+    const d = await res.json();
+    setStatus(`Матч рассчитан (HOME_WIN). Рассчитано ставок: ${d.settled_bets.length}. Выигрыш переведён из эскроу.`, 'HTTP 200');
     await fetchState();
 }
 
-async function approveByArbiterOrder() {
-    const reason = document.getElementById('inp-court-order')?.value || 'Судебный ордер №42';
+async function runCase1DisclosureTest() {
+    highlightNodes(['node-regulator', 'node-arbiter']);
+    const res = await fetch('/api/regulator/v1/disclosures/solo-attempt', { method: 'POST' });
+    const d = await res.json();
+    const banner = document.getElementById('disclosure-banner');
+    document.getElementById('disclosure-text').innerText = d.message;
+    document.getElementById('btn-arbiter-approve').classList.remove('hidden');
+    banner.classList.remove('hidden');
+    setStatus(d.message, 'HTTP 403 FORBIDDEN');
+    await fetchState();
+}
+
+async function approveArbiterDisclosure() {
     const res = await fetch('/api/arbiter/v1/disclosures/approve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason: reason })
+        body: JSON.stringify({ reason: 'Судебный ордер №42' })
+    });
+    await res.json();
+    document.getElementById('btn-arbiter-approve').classList.add('hidden');
+    setStatus('Порог Шамира «2 из 3» собран (Регулятор + Арбитр). Ключ AES-256-GCM восстановлен интерполяцией Лагранжа.', 'HTTP 200');
+    await fetchState();
+}
+
+// =============================================================================
+// КЕЙС 2: МАССОВАЯ НАГРУЗКА (10 ИГРОКОВ И СТАВОК)
+// =============================================================================
+async function runCase2Mass10() {
+    setStatus('Генерация 10 профилей (AES-256-GCM + Шамир) и 10 ставок...', 'PROCESSING');
+    const res = await fetch('/api/regulator/v1/demo/mass-10', { method: 'POST' });
+    const d = await res.json();
+    setStatus(`Сгенерировано ${d.players_count} игроков и 10 ставок. Откройте «🗄️ БД / Инспектор» для просмотра таблиц.`, 'HTTP 201');
+    if (!isDbOpen) toggleDbInspector();
+    await fetchState();
+}
+
+// =============================================================================
+// 3 СЦЕНАРИЯ SMPC
+// =============================================================================
+async function runSmpcAntifraud() {
+    highlightNodes(['node-bookmaker', 'node-regulator', 'node-arbiter']);
+    const res = await fetch('/api/regulator/v1/smpc/antifraud', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ score_alpha: 68, score_beta: 54, threshold: 100 })
     });
     const d = await res.json();
-    if (!res.ok) {
-        alert(d.error || 'Ошибка одобрения арбитром');
-        return;
-    }
-    document.getElementById('solo-error-box').classList.add('hidden');
-    setBanner('⚖️ Порог «2 из 3» собран (Регулятор + Арбитр): личность законно расшифрована и запротоколирована в хэш-цепочке.', 'POST /api/arbiter/v1/disclosures/approve');
+    setStatus(`[${d.protocol}] Доля Alpha: ${d.bk_alpha_share_node1} | Доля Beta: ${d.bk_beta_share_node1} → Сумма скоров = ${d.combined_score} (Порог ${d.threshold}) → ${d.verdict}`, 'SMPC 200');
     await fetchState();
 }
 
-async function voluntaryClientDisclose() {
-    const res = await fetch('/api/client/v1/disclosures/voluntary', { method: 'POST' });
-    if (res.ok) {
-        document.getElementById('solo-error-box').classList.add('hidden');
-        setBanner('🙋 Клиент добровольно предоставил свою долю #1: личность подтверждена (Регулятор + Клиент).', 'POST /api/client/v1/disclosures/voluntary');
-        await fetchState();
-    }
+async function runSmpcSolvency() {
+    highlightNodes(['node-bookmaker', 'node-regulator']);
+    const res = await fetch('/api/regulator/v1/smpc/solvency', { method: 'POST' });
+    const d = await res.json();
+    setStatus(`[${d.protocol}] Заслеплённая разность узла #1: ${d.node_1_blinded_diff} → Коэффициент покрытия: ${d.coverage_ratio}x → ${d.verdict}`, 'SMPC 200');
+    await fetchState();
 }
 
-async function resetDemo() {
+async function runSmpcOracleSettle() {
+    highlightNodes(['node-regulator', 'node-arbiter', 'node-client']);
+    const res = await fetch('/api/regulator/v1/smpc/oracle-settle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ votes: ['HOME_WIN', 'HOME_WIN', 'AWAY_WIN'] })
+    });
+    const d = await res.json();
+    setStatus(`[${d.protocol}] Консенсус 3 оракулов достигнут (${d.votes_for_winner}/3 за ${d.outcome}). Автоматически рассчитано ставок: ${d.settled_bets_count}.`, 'SMPC 200');
+    await fetchState();
+}
+
+async function resetAll() {
     await fetch('/api/demo/reset', { method: 'POST' });
-    document.getElementById('solo-error-box').classList.add('hidden');
-    document.getElementById('revealed-success-box').classList.add('hidden');
-    setBanner('🔄 Демонстрационная база данных сброшена в исходное состояние.', 'POST /api/demo/reset');
+    document.getElementById('disclosure-banner').classList.add('hidden');
+    highlightNodes([]);
+    setStatus('База данных очищена.', 'HTTP 200');
     await fetchState();
 }
 
 // =============================================================================
-// ОТРИСОВКА ИНТЕРФЕЙСА (RENDER)
+// ОТРИСОВКА UI И ТАБЛИЦ БАЗЫ ДАННЫХ
 // =============================================================================
-function renderAll(st) {
-    // 1. Шапка и Audit Root
-    document.getElementById('header-audit-root').innerText = '0x' + (st.regulator.audit_root || '').slice(0, 20) + '...';
+function renderUI(st) {
+    document.getElementById('hdr-audit-root').innerText = '0x' + (st.regulator.audit_root || '').slice(0, 20) + '...';
 
-    // 2. Карточка 1: Игрок
-    const badge = document.getElementById('pres-client-badge');
-    if (st.wallet.registered) {
-        badge.innerText = `KYC OK • ${st.wallet.client_id}`;
-        badge.className = 'px-2.5 py-0.5 rounded-full text-[11px] font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
-    } else {
-        badge.innerText = 'Ожидание KYC';
-        badge.className = 'px-2.5 py-0.5 rounded-full text-[11px] font-mono bg-slate-800 text-slate-400';
-    }
+    document.getElementById('ui-clients-count').innerText = `${st.summary.clients_count} профилей`;
+    const cliAvail = st.summary.clients_count > 1 ? st.summary.total_clients_available : st.accounts.client.available;
+    const cliHeld = st.summary.clients_count > 1 ? st.summary.total_clients_held : st.accounts.client.held;
 
-    document.getElementById('pres-client-avail').innerText = formatMoney(st.accounts.client.available);
-    document.getElementById('pres-client-held').innerText = formatMoney(st.accounts.client.held);
-    document.getElementById('pres-token-alpha').innerText = st.wallet.tokens.bk_alpha || '—';
-    document.getElementById('pres-token-beta').innerText = st.wallet.tokens.bk_beta || '—';
+    document.getElementById('ui-cli-avail').innerText = fmtRub(cliAvail);
+    document.getElementById('ui-cli-held').innerText = fmtRub(cliHeld);
+    document.getElementById('ui-tok-a').innerText = st.wallet.tokens.bk_alpha || '—';
+    document.getElementById('ui-tok-b').innerText = st.wallet.tokens.bk_beta || '—';
+    document.getElementById('ui-share-1').innerText = st.wallet.client_share || '—';
 
-    // 3. Карточка 2: Нейтральный Сейф (Эскроу)
-    const cliHeld = st.accounts.client.held || 0;
-    const bkHeld = st.accounts.bookmaker.held || 0;
-    const totalHeld = cliHeld + bkHeld;
-    document.getElementById('pres-total-escrow-held').innerText = formatMoney(totalHeld);
-    document.getElementById('pres-escrow-cli-h').innerText = formatMoney(cliHeld, 'rub');
-    document.getElementById('pres-escrow-bk-h').innerText = formatMoney(bkHeld, 'rub');
+    document.getElementById('ui-bk-avail').innerText = fmtRub(st.accounts.bookmaker.available);
+    document.getElementById('ui-bk-held').innerText = fmtRub(st.accounts.bookmaker.held);
+    document.getElementById('ui-bets-count').innerText = st.summary.bets_count;
 
-    const escBadge = document.getElementById('pres-escrow-status');
-    if (totalHeld > 0) {
-        escBadge.innerText = '🔒 2 ХОЛДА ЗАМОРОЖЕНЫ';
-        escBadge.className = 'px-2.5 py-0.5 rounded-full text-[11px] font-mono bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse';
-        document.getElementById('bar-cli-hold').style.width = '42%';
-        document.getElementById('bar-bk-hold').style.width = '58%';
-    } else if (st.regulator.last_outcome) {
-        escBadge.innerText = `✅ КЛИРИНГ: ${st.regulator.last_outcome}`;
-        escBadge.className = 'px-2.5 py-0.5 rounded-full text-[11px] font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/40';
-        document.getElementById('bar-cli-hold').style.width = '0%';
-        document.getElementById('bar-bk-hold').style.width = '0%';
-    } else {
-        escBadge.innerText = 'Готов к приёму';
-        escBadge.className = 'px-2.5 py-0.5 rounded-full text-[11px] font-mono bg-slate-800 text-slate-400';
-        document.getElementById('bar-cli-hold').style.width = '0%';
-        document.getElementById('bar-bk-hold').style.width = '0%';
-    }
+    const totalEscrow = cliHeld + (st.accounts.bookmaker.held || 0);
+    document.getElementById('ui-total-escrow').innerText = fmtRub(totalEscrow);
+    document.getElementById('ui-links-count').innerText = st.regulator.links.length;
+    document.getElementById('ui-ev-status').innerText = st.regulator.event_status;
+    document.getElementById('ui-share-2').innerText = st.regulator.regulator_share || '—';
+    document.getElementById('ui-share-3').innerText = st.arbiter.stored_share || '—';
 
-    // 4. Карточка 3: Букмекер
-    document.getElementById('pres-bk-avail').innerText = formatMoney(st.accounts.bookmaker.available);
-    document.getElementById('pres-bk-held').innerText = formatMoney(st.accounts.bookmaker.held);
-    const seenTok = st.bookmaker.exposures.length > 0 ? st.bookmaker.exposures[0].token : (st.wallet.tokens.bk_alpha || 'Нет ставок');
-    document.getElementById('pres-bk-seen-token').innerText = seenTok;
-
-    // 5. Плашка успешного раскрытия «2 из 3»
-    const revBox = document.getElementById('revealed-success-box');
     if (st.disclosure && st.disclosure.status === 'REVEALED' && st.disclosure.revealed_identity) {
         const p = st.disclosure.revealed_identity;
-        document.getElementById('revealed-parties').innerText = st.disclosure.collected.join(' + ');
-        document.getElementById('revealed-person-details').innerText =
-            `Токен ${st.disclosure.subject} -> ФИО: ${p.full_name} | Паспорт: ${p.passport} | Client ID: ${p.client_id}`;
-        revBox.classList.remove('hidden');
+        document.getElementById('ui-disc-status').innerText = `РАСКРЫТО (${st.disclosure.collected.join('+')})`;
+        document.getElementById('ui-revealed-name').innerText = `${p.full_name} (${p.passport})`;
+        document.getElementById('disclosure-text').innerText =
+            `Расшифровано AES-256-GCM (доли ${st.disclosure.collected.join(' + ')}): ${p.full_name}, паспорт ${p.passport}, ID ${p.client_id}`;
     } else {
-        revBox.classList.add('hidden');
+        document.getElementById('ui-disc-status').innerText = 'ЗАЩИЩЕНО';
+        document.getElementById('ui-revealed-name').innerText = 'ФИО скрыто';
     }
 
-    // 6. Расширенный режим (Технические панели)
-    document.getElementById('adv-secret-s').innerText = st.wallet.client_secret || '—';
-    document.getElementById('adv-client-share').innerText = st.wallet.client_share || '—';
-    document.getElementById('adv-zk-alpha').innerText = st.wallet.zk_proofs.bk_alpha || '—';
-    document.getElementById('adv-receipt-count').innerText = `Квитанций: ${st.wallet.receipts.length}`;
-    document.getElementById('adv-arbiter-share').innerText = st.arbiter.stored_share || '—';
-
-    // Таблица экспозиции букмекера
-    const expTbody = document.getElementById('adv-exposure-tbody');
-    if (st.bookmaker.exposures.length === 0) {
-        expTbody.innerHTML = '<tr><td colspan="5" class="py-2 text-slate-500 italic">Ставок пока нет</td></tr>';
-    } else {
-        expTbody.innerHTML = st.bookmaker.exposures.map(x => `
-            <tr class="border-b border-slate-800/60">
-                <td class="py-1.5 text-indigo-400 font-bold">${x.token}</td>
-                <td class="py-1.5">${x.bets_count}</td>
-                <td class="py-1.5">${formatMoney(x.total_staked, 'rub')}</td>
-                <td class="py-1.5 text-emerald-400 font-bold">${x.won_count}</td>
-                <td class="py-1.5"><span class="px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-400 text-[10px]">🔒 НЕИЗВЕСТНО</span></td>
-            </tr>
-        `).join('');
-    }
-
-    // Двойная бухгалтерская книга
-    const ledgerDiv = document.getElementById('adv-ledger-list');
-    if (st.regulator.ledger.length === 0) {
-        ledgerDiv.innerHTML = '<div class="text-slate-500 italic">Проводок пока нет</div>';
-    } else {
-        ledgerDiv.innerHTML = st.regulator.ledger.map(e => `
-            <div class="flex justify-between border-b border-slate-800/60 pb-1">
-                <span class="text-slate-500">${e.tx_id}</span>
-                <span class="text-slate-300">${e.account_id}</span>
-                <span class="${e.direction === 'CREDIT' ? 'text-emerald-400' : 'text-rose-400'} font-bold">
-                    ${e.direction === 'CREDIT' ? '+' : '−'}${formatMoney(e.amount)}
-                </span>
-            </div>
-        `).join('');
-    }
-
-    // Инспектор SQL таблиц
-    renderSqlInspector(st);
-
-    // Журнал аудита SHA-256
-    const auditTbody = document.getElementById('audit-log-tbody');
-    if (st.regulator.audit_logs.length === 0) {
-        auditTbody.innerHTML = '<tr><td colspan="6" class="py-3 text-slate-500 italic">Журнал пуст</td></tr>';
-    } else {
-        auditTbody.innerHTML = st.regulator.audit_logs.map(l => `
-            <tr class="border-b border-slate-800/50">
-                <td class="py-1.5 px-2 text-emerald-400 font-bold">#${l.seq}</td>
-                <td class="py-1.5 px-2 text-slate-400">${l.ts}</td>
-                <td class="py-1.5 px-2"><span class="px-2 py-0.5 rounded bg-slate-800 text-slate-200">${l.actor}</span></td>
-                <td class="py-1.5 px-2 text-indigo-400 font-bold">${l.action}</td>
-                <td class="py-1.5 px-2 text-slate-500">0x${l.prev_hash.slice(0, 14)}...</td>
-                <td class="py-1.5 px-2 text-emerald-400">0x${l.current_hash.slice(0, 18)}...</td>
-            </tr>
-        `).join('');
+    if (isDbOpen) {
+        renderDbTable(st);
     }
 }
 
-function renderSqlInspector(st) {
-    const dumpMap = {
-        links: st.regulator.links,
-        accounts: [st.accounts.client, st.accounts.bookmaker, st.accounts.house],
-        holds: st.regulator.all_holds,
-        bm_token_exposure: st.bookmaker.exposures,
-        custody_shares: [
-            { party: 'client (локально в кошельке)', share: st.wallet.client_share || null },
-            { party: 'regulator (БД регулятора)', share: st.regulator.regulator_share || null },
-            { party: 'arbiter (БД арбитра)', share: st.arbiter.stored_share || null }
-        ]
-    };
-    document.getElementById('sql-dump-viewer').innerText = JSON.stringify(dumpMap[selectedSqlTable] || [], null, 2);
+function renderDbTable(st) {
+    const thead = document.getElementById('db-table-head');
+    const tbody = document.getElementById('db-table-body');
+
+    if (activeDbTab === 'links') {
+        thead.innerHTML = '<tr><th class="p-2">token (PK)</th><th class="p-2">bookmaker_id</th><th class="p-2">client_ref_sealed (AES-256-GCM)</th></tr>';
+        tbody.innerHTML = st.regulator.links.map(r => `
+            <tr>
+                <td class="p-2 text-slate-200 font-bold">${r.token}</td>
+                <td class="p-2 text-slate-400">${r.bookmaker_id}</td>
+                <td class="p-2 text-slate-400 truncate max-w-lg">${r.client_ref_sealed}</td>
+            </tr>
+        `).join('') || '<tr><td colspan="3" class="p-3 text-slate-500">Пусто</td></tr>';
+    } else if (activeDbTab === 'holds') {
+        thead.innerHTML = '<tr><th class="p-2">hold_id</th><th class="p-2">owner_ref</th><th class="p-2">ref_type</th><th class="p-2">amount (коп.)</th><th class="p-2">status</th></tr>';
+        tbody.innerHTML = st.regulator.holds.map(h => `
+            <tr>
+                <td class="p-2 text-slate-300">${h.id}</td>
+                <td class="p-2 text-slate-300">${h.owner_ref}</td>
+                <td class="p-2 text-slate-400">${h.ref_type}</td>
+                <td class="p-2 text-slate-200 font-bold">${h.amount.toLocaleString('ru-RU')} (${fmtRub(h.amount)})</td>
+                <td class="p-2 text-slate-300">${h.status}</td>
+            </tr>
+        `).join('') || '<tr><td colspan="5" class="p-3 text-slate-500">Пусто</td></tr>';
+    } else if (activeDbTab === 'accounts') {
+        thead.innerHTML = '<tr><th class="p-2">owner_ref</th><th class="p-2">available (коп.)</th><th class="p-2">held (коп.)</th><th class="p-2">version</th></tr>';
+        tbody.innerHTML = st.accounts.all.map(a => `
+            <tr>
+                <td class="p-2 text-slate-200 font-bold">${a.owner_ref}</td>
+                <td class="p-2 text-emerald-400">${a.available.toLocaleString('ru-RU')} (${fmtRub(a.available)})</td>
+                <td class="p-2 text-slate-300">${a.held.toLocaleString('ru-RU')} (${fmtRub(a.held)})</td>
+                <td class="p-2 text-slate-500">v${a.version}</td>
+            </tr>
+        `).join('');
+    } else if (activeDbTab === 'bm_token_exposure') {
+        thead.innerHTML = '<tr><th class="p-2">token (Псевдоним в БК)</th><th class="p-2">bets_count</th><th class="p-2">total_staked</th><th class="p-2">won_count</th><th class="p-2">ФИО</th></tr>';
+        tbody.innerHTML = st.bookmaker.exposures.map(x => `
+            <tr>
+                <td class="p-2 text-slate-200 font-bold">${x.token}</td>
+                <td class="p-2 text-slate-300">${x.bets_count}</td>
+                <td class="p-2 text-slate-300">${fmtRub(x.total_staked)}</td>
+                <td class="p-2 text-emerald-400">${x.won_count}</td>
+                <td class="p-2 text-slate-500">🔒 ОТСУТСТВУЕТ</td>
+            </tr>
+        `).join('') || '<tr><td colspan="5" class="p-3 text-slate-500">Пусто</td></tr>';
+    } else if (activeDbTab === 'ledger') {
+        thead.innerHTML = '<tr><th class="p-2">tx_id</th><th class="p-2">account_id</th><th class="p-2">direction</th><th class="p-2">amount (коп.)</th></tr>';
+        tbody.innerHTML = st.regulator.ledger.map(e => `
+            <tr>
+                <td class="p-2 text-slate-400">${e.tx_id}</td>
+                <td class="p-2 text-slate-300">${e.account_id}</td>
+                <td class="p-2 ${e.direction === 'CREDIT' ? 'text-emerald-400' : 'text-rose-400'} font-bold">${e.direction}</td>
+                <td class="p-2 text-slate-200">${e.amount.toLocaleString('ru-RU')} (${fmtRub(e.amount)})</td>
+            </tr>
+        `).join('') || '<tr><td colspan="4" class="p-3 text-slate-500">Пусто</td></tr>';
+    } else if (activeDbTab === 'audit_log') {
+        thead.innerHTML = '<tr><th class="p-2">seq</th><th class="p-2">ts</th><th class="p-2">actor</th><th class="p-2">action</th><th class="p-2">prev_hash</th><th class="p-2">current_hash</th></tr>';
+        tbody.innerHTML = st.regulator.audit_logs.map(l => `
+            <tr>
+                <td class="p-2 text-slate-300">#${l.seq}</td>
+                <td class="p-2 text-slate-500">${l.ts}</td>
+                <td class="p-2 text-slate-300">${l.actor}</td>
+                <td class="p-2 text-slate-200 font-bold">${l.action}</td>
+                <td class="p-2 text-slate-500">0x${l.prev_hash.slice(0, 14)}...</td>
+                <td class="p-2 text-emerald-400">0x${l.current_hash.slice(0, 16)}...</td>
+            </tr>
+        `).join('') || '<tr><td colspan="6" class="p-3 text-slate-500">Пусто</td></tr>';
+    }
 }
 
 window.addEventListener('DOMContentLoaded', () => {

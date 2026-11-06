@@ -1,41 +1,21 @@
-/* Argon Cyber-FinTech Custom Styles */
-body.theme-dark {
-    background-color: #0B1120;
-    color: #F1F5F9;
-    font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+/* Сдержанный тёмный стиль без визуального шума */
+body {
+    font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
-/* Плавная анимация раскрытия расширенного режима */
-#advanced-inspector-container {
-    animation: fadeInSlide 0.25s ease-out;
+.node-active {
+    border-color: #94A3B8 !important;
+    box-shadow: 0 0 0 1px rgba(148, 163, 184, 0.3);
 }
 
-@keyframes fadeInSlide {
-    from {
-        opacity: 0;
-        transform: translateY(-8px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
-/* Стилизация скроллбаров для SQL-инспектора и журнала */
 ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
 }
-
 ::-webkit-scrollbar-track {
-    background: #0F172A;
+    background: #0D1117;
 }
-
 ::-webkit-scrollbar-thumb {
-    background: #334155;
+    background: #30363D;
     border-radius: 3px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-    background: #475569;
 }

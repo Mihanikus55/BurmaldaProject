@@ -1,6 +1,6 @@
 from datetime import datetime
 from sqlalchemy import (
-    BigInteger, Boolean, Column, DateTime, Integer, String, Text, UniqueConstraint, create_engine
+    BigInteger, Column, DateTime, Integer, String, Text, UniqueConstraint, create_engine
 )
 from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -8,37 +8,31 @@ from sqlalchemy.pool import StaticPool
 Base = declarative_base()
 
 
-# =============================================================================
-# МОДЕЛИ РЕГУЛЯТОРА И ЭСКРОУ
-# =============================================================================
 class ClientModel(Base):
     __tablename__ = "clients"
     id = Column(String(64), primary_key=True)
     kyc_status = Column(String(32), nullable=False, default="VERIFIED")
-    pd_blob = Column(Text, nullable=False)
+    pd_blob = Column(Text, nullable=False)  # Зашифровано AES-256-GCM
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class LinkModel(Base):
-    """Таблица зашифрованных связей «Токен <-> Зашифрованный ID клиента»."""
     __tablename__ = "links"
     token = Column(String(128), primary_key=True)
     bookmaker_id = Column(String(64), nullable=False, index=True)
-    client_ref_sealed = Column(Text, nullable=False)
+    client_ref_sealed = Column(Text, nullable=False)  # Зашифровано AES-256-GCM
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class CustodyShareModel(Base):
-    """Хранит долю ключа Регулятора (share #2)."""
     __tablename__ = "custody_shares"
     id = Column(Integer, primary_key=True, autoincrement=True)
     client_id = Column(String(64), nullable=False, index=True)
     party = Column(String(32), nullable=False)
-    payload = Column(Text, nullable=False)
+    payload = Column(Text, nullable=False)  # Координата Шамира x:y_hex
 
 
 class AccountModel(Base):
-    """Счета в целых копейках (int64). Никаких float!"""
     __tablename__ = "accounts"
     id = Column(String(64), primary_key=True)
     owner_type = Column(String(32), nullable=False)
@@ -49,7 +43,6 @@ class AccountModel(Base):
 
 
 class LedgerEntryModel(Base):
-    """Двойная бухгалтерская запись (DEBIT / CREDIT)."""
     __tablename__ = "ledger_entries"
     id = Column(Integer, primary_key=True, autoincrement=True)
     tx_id = Column(String(64), nullable=False, index=True)
@@ -61,7 +54,6 @@ class LedgerEntryModel(Base):
 
 
 class HoldModel(Base):
-    """Активные холды ставок клиента и риска букмекера."""
     __tablename__ = "holds"
     id = Column(String(64), primary_key=True)
     account_id = Column(String(64), nullable=False, index=True)
@@ -132,9 +124,6 @@ class AuditLogModel(Base):
     current_hash = Column(String(128), nullable=False)
 
 
-# =============================================================================
-# МОДЕЛИ БУКМЕКЕРА (БЕЗ ПЕРСОНАЛЬНЫХ ДАННЫХ)
-# =============================================================================
 class BmTokenExposureModel(Base):
     __tablename__ = "bm_token_exposure"
     token = Column(String(128), primary_key=True)
@@ -169,9 +158,6 @@ class BmBetModel(Base):
     receipt_sig = Column(Text, nullable=False)
 
 
-# =============================================================================
-# МОДЕЛИ КЛИЕНТСКОГО КОШЕЛЬКА И НЕЗАВИСИМОГО АРБИТРА
-# =============================================================================
 class WalletIdentityModel(Base):
     __tablename__ = "wallet_identity"
     client_id = Column(String(64), primary_key=True)
@@ -185,7 +171,9 @@ class WalletIdentityModel(Base):
 
 class WalletTokenModel(Base):
     __tablename__ = "wallet_tokens"
-    bookmaker_id = Column(String(64), primary_key=True)
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    client_id = Column(String(64), nullable=False, index=True)
+    bookmaker_id = Column(String(64), nullable=False)
     token = Column(String(128), nullable=False)
     zk_token_proof = Column(Text, nullable=False)
 
@@ -217,10 +205,7 @@ class ArbiterAuditModel(Base):
     details = Column(Text, nullable=False)
 
 
-# =============================================================================
-# ИНИЦИАЛИЗАЦИЯ ДВИЖКА SQLITE
-# =============================================================================
-DB_URL = "sqlite:///burmalda_platform.db"
+DB_URL = "sqlite:///burmalda_platform_v2.db"
 
 engine = create_engine(
     DB_URL,

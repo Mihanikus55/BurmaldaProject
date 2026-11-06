@@ -13,12 +13,12 @@ arbiter_bp = Blueprint("arbiter", __name__)
 @arbiter_bp.route("/v1/disclosures/approve", methods=["POST"])
 def approve_disclosure():
     data = request.json or {}
-    reason = data.get("reason", "Судебный ордер №42 (Законная проверка)")
+    reason = data.get("reason", "Судебный ордер №42")
 
     with SessionLocal() as session:
         arb_share = session.query(ArbiterShareModel).first()
         if not arb_share:
-            return jsonify({"error": "Сначала зарегистрируйте клиента (Шаг 1)"}), 400
+            return jsonify({"error": "Нет депонированных долей (сначала сделайте ставку)"}), 400
 
         disc = session.query(DisclosureModel).order_by(DisclosureModel.created_at.desc()).first()
         if not disc:
@@ -34,7 +34,9 @@ def approve_disclosure():
             )
             session.add(disc)
             session.flush()
-            reg_share = session.query(CustodyShareModel).filter_by(party="regulator").first()
+            reg_share = session.query(CustodyShareModel).filter_by(
+                client_id=arb_share.client_id, party="regulator"
+            ).first()
             if reg_share:
                 session.add(DisclosureShareModel(
                     disclosure_id=disc.id, party="regulator", payload=reg_share.payload
@@ -52,12 +54,10 @@ def approve_disclosure():
 
         session.add(ArbiterAuditModel(
             action="DISCLOSURE_APPROVED",
-            details=f"Запрос {disc.id} одобрен по основанию: {reason} (передана доля #3)"
+            details=f"Запрос {disc.id} одобрен ({reason})"
         ))
-        append_audit(session, "arbiter", "DISCLOSURE_THRESHOLD_2_OF_3_REVEALED", {
-            "request_id": disc.id,
-            "parties": ["regulator", "arbiter"],
-            "reason": reason,
+        append_audit(session, "arbiter", "SHAMIR_LAGRANGE_2_OF_3_REVEALED", {
+            "request_id": disc.id, "parties": ["regulator", "arbiter"]
         })
         session.commit()
 
