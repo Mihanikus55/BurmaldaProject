@@ -430,10 +430,16 @@ function renderClientPanel() {
         <div class="space-y-1.5 text-xs">
             <div class="flex justify-between"><span class="text-slate-400">Гражданская личность (локально):</span><span class="font-semibold">${w.fullName} (${w.passport})</span></div>
             <div class="flex justify-between"><span class="text-slate-400">Client ID (только для Регулятора):</span><span class="font-mono text-amber-400">${w.clientId}</span></div>
-            <div class="flex justify-between"><span class="text-slate-400">Мастер-секрет s (CSPRNG 256-bit):</span><span class="font-mono text-emerald-400">${w.clientSecret}</span></div>
-            <div class="flex justify-between"><span class="text-slate-400">Доля ключа #1 (Client Share):</span><span class="font-mono text-amber-300">${w.clientShare}</span></div>
+            <!-- Ключи подписи по конторам: их выдал регулятор, приватные части живут здесь -->
+            <div class="flex justify-between gap-2"><span class="text-slate-400 shrink-0">Ключ подписи для Alpha:</span><span class="font-mono text-emerald-400 truncate" title="${w.bookKeys.bk_alpha || ''}">${w.bookKeys.bk_alpha || '—'}</span></div>
+            <div class="flex justify-between gap-2"><span class="text-slate-400 shrink-0">Ключ подписи для Beta:</span><span class="font-mono text-emerald-400 truncate" title="${w.bookKeys.bk_beta || ''}">${w.bookKeys.bk_beta || '—'}</span></div>
+            <div class="flex justify-between gap-2 items-center">
+                <span class="text-slate-400 shrink-0">Справка допуска (Ed25519):</span>
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded font-mono text-[11px] ${w.credentialValid ? 'bg-emerald-500/15 text-emerald-400' : 'bg-rose-500/15 text-rose-400'}">${w.credentialValid ? '✅ подпись и срок проверены' : '❌ недействительна'}</span>
+            </div>
+            <div class="flex justify-between gap-2"><span class="text-slate-400 shrink-0">Доля ключа #1 (Client Share):</span><span class="font-mono text-amber-300 truncate" title="${w.clientShare}">${w.clientShare}</span></div>
             <div class="flex justify-between items-center pt-1">
-                <span class="text-slate-400">BBS+ Справка Регулятора:</span>
+                <span class="text-slate-400">Справка Регулятора (Ed25519):</span>
                 <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-mono text-[11px]">✅ 18+: ДА | KYC: OK | ЛИМИТ: OK</span>
             </div>
         </div>
@@ -443,13 +449,13 @@ function renderClientPanel() {
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
             <div class="sub-box p-2 rounded border bg-slate-900 border-indigo-500/30">
                 <div class="text-[10px] text-slate-400">Для БК Alpha (bk_alpha):</div>
-                <div class="font-mono font-bold text-indigo-400 mt-0.5">${w.tokens.bk_alpha}</div>
-                <div class="text-[10px] font-mono text-slate-500 truncate mt-0.5">ZK: ${w.zkProofs.bk_alpha}</div>
+                <div class="font-mono font-bold text-indigo-400 mt-0.5 truncate" title="${w.tokens.bk_alpha}">${w.tokens.bk_alpha}</div>
+                
             </div>
             <div class="sub-box p-2 rounded border bg-slate-900 border-purple-500/30">
                 <div class="text-[10px] text-slate-400">Для БК Beta (bk_beta):</div>
-                <div class="font-mono font-bold text-purple-400 mt-0.5">${w.tokens.bk_beta}</div>
-                <div class="text-[10px] font-mono text-slate-500 truncate mt-0.5">ZK: ${w.zkProofs.bk_beta}</div>
+                <div class="font-mono font-bold text-purple-400 mt-0.5 truncate" title="${w.tokens.bk_beta}">${w.tokens.bk_beta}</div>
+                
             </div>
         </div>
     ` : `<p class="text-xs text-slate-400 italic">Пройдите регистрацию для деривации токенов P_B</p>`;
@@ -476,7 +482,7 @@ function renderClientPanel() {
                         <h3 class="font-bold text-sm sm:text-base">1. Client Wallet (Кошелёк Клиента)</h3>
                         <span class="text-[11px] font-mono px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">:5003</span>
                     </div>
-                    <p class="text-xs text-slate-400">Единственное место хранения секрета s, доли ключа #1 и квитанций</p>
+                    <p class="text-xs text-slate-400">Единственное место хранения ключей подписи, доли ключа #1 и квитанций</p>
                 </div>
             </div>
             <span class="text-xs font-mono px-2.5 py-1 rounded-full ${w.registered ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' : 'bg-slate-500/15 text-slate-400'}">
@@ -496,7 +502,7 @@ function renderClientPanel() {
 
                 <div class="sub-box p-3 rounded-lg border bg-slate-800/70 border-slate-700">
                     <div class="text-xs font-bold uppercase text-amber-500 mb-1.5 flex items-center justify-between">
-                        <span>✨ Несвязываемые Токены (P_B = s · H_B на Ristretto255)</span>
+                        <span>✨ Несвязываемые Токены (случайные, выдаёт регулятор)</span>
                         <span class="text-[10px] font-normal text-slate-400">Защита от сговора БК</span>
                     </div>
                     ${tokensBlock}
@@ -582,9 +588,9 @@ function renderBookmakerPanel() {
                 : 'bg-amber-500/20 text-amber-400';
             return `
                 <div class="sub-box p-2 rounded border text-[11px] font-mono flex flex-wrap items-center justify-between gap-2 bg-slate-950/70 border-slate-800">
-                    <div><span class="text-indigo-400 font-bold">${b.token}</span> → ${b.selection} (Кэф ${b.odds})</div>
+                    <div class="truncate max-w-[300px]"><span class="text-indigo-400 font-bold" title="${b.token}">${b.token.slice(0, 18)}…</span> → ${b.selection} (Кэф ${b.odds})</div>
                     <div class="flex items-center gap-2">
-                        <span class="text-slate-400">Commit: 0x${b.odds_commitment.slice(0, 10)}…</span>
+                        <span class="text-slate-400" title="commitment: ${b.odds_commitment}\nsalt: ${b.odds_salt || '(не раскрыта до расчёта)'}">Commit: 0x${b.odds_commitment.slice(0, 10)}… ${b.odds_salt ? (b.commitment_valid ? '<span class="text-emerald-400">✅ сошлось</span>' : '<span class="text-rose-400">❌'+'</span>') : '<span class="text-amber-400">🔒 соль скрыта</span>'}</span>
                         <span class="px-2 py-0.5 rounded text-[10px] font-bold ${stCls}">${b.status}</span>
                     </div>
                 </div>
@@ -700,7 +706,7 @@ function renderRegulatorPanel() {
                 <div class="sub-box p-3 rounded-lg border bg-slate-800/70 border-slate-700 space-y-1.5">
                     <div class="flex items-center justify-between mb-1">
                         <span class="text-xs font-bold uppercase text-emerald-400">🔒 Таблица зашифрованных связей (links: AES-256-GCM)</span>
-                        <span class="text-[11px] font-mono text-emerald-400">Доля Регулятора: ${reg.regulatorShare || 'нет'}</span>
+                        <span class="text-[11px] font-mono text-emerald-400 truncate max-w-[220px]" title="${reg.regulatorShare || ''}">Доля Регулятора: ${reg.regulatorShare || 'нет'}</span>
                     </div>
                     ${linksHtml}
                 </div>
@@ -727,7 +733,7 @@ function renderRegulatorPanel() {
             </div>
 
             <div class="pt-2 border-t border-slate-700/40 flex items-center justify-between text-xs font-mono">
-                <span class="text-slate-400"># Audit Root (seq #${reg.auditLogs.length}):</span>
+                <span class="text-slate-400"># Audit Root (seq #${reg.auditLogs.length}) ${reg.auditChainValid ? '<span class="text-emerald-400">✅ цепочка цела</span>' : `<span class="text-rose-400">❌ сломана на #${reg.auditBrokenAt} (${reg.auditBrokenReason})</span>`}:</span>
                 <span class="text-emerald-400 truncate max-w-[240px]">0x${reg.auditRoot.slice(0, 24)}…</span>
             </div>
         </div>
@@ -741,7 +747,7 @@ function renderArbiterPanel() {
     const shareBlock = arb.storedShare ? `
         <div class="text-xs space-y-1 font-mono">
             <div class="flex justify-between"><span class="text-slate-400">Субъект депонирования:</span><span class="text-purple-300">${arb.clientId}</span></div>
-            <div class="flex justify-between"><span class="text-slate-400">Резервная доля #3 (Arbiter Share):</span><span class="text-emerald-400">${arb.storedShare}</span></div>
+            <div class="flex justify-between"><span class="text-slate-400 shrink-0">Резервная доля #3 (Arbiter Share):</span><span class="text-emerald-400 truncate" title="${arb.storedShare}">${arb.storedShare}</span></div>
         </div>
     ` : `<div class="text-xs text-slate-400 italic">Резервные доли ещё не поступали</div>`;
 
@@ -750,7 +756,7 @@ function renderArbiterPanel() {
         : `
             <div class="space-y-2.5 text-xs">
                 <div class="flex flex-wrap justify-between gap-2">
-                    <span>Запрос <strong class="font-mono text-purple-300">${disc.id}</strong> по токену <strong class="font-mono text-indigo-400">${disc.subject}</strong></span>
+                    <span>Запрос <strong class="font-mono text-purple-300">${disc.id}</strong> по токену <strong class="font-mono text-indigo-400" title="${disc.subject}">${disc.subject.slice(0, 18)}…</strong></span>
                     <span class="font-mono text-[11px] px-2 py-0.5 rounded bg-amber-500/20 text-amber-300">
                         Собрано долей: ${disc.collected.length} из 2 (${disc.collected.join(', ')})
                     </span>
@@ -812,7 +818,7 @@ function renderArbiterPanel() {
 
 function renderPrivacyMatrix() {
     const s = uiState.serverData;
-    const tokAlpha = s.wallet.tokens.bk_alpha || 'P_BK_ALPHA_9F2B3C';
+    const tokAlpha = (s.wallet.tokens.bk_alpha || "").slice(0, 18) + "…" || 'P_BK_ALPHA_9F2B3C';
     const isRevealed = s.disclosure?.status === 'REVEALED';
 
     const matrixRows = [
@@ -937,7 +943,7 @@ function renderAuditLog() {
                 <p class="text-xs text-slate-400">Каждая запись включает хэш предыдущей: подделать историю ставок или скрыть факт деанонимизации невозможно</p>
             </div>
             <div class="text-xs font-mono px-3 py-1 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                Root Hash: 0x${reg.auditRoot.slice(0, 20)}…
+                Root Hash: 0x${reg.auditRoot.slice(0, 20)}… ${reg.auditChainValid ? '✅ проверено пересчётом' : `❌ подделка на записи #${reg.auditBrokenAt}`}${reg.auditAnchors.length ? ` · опубликованных корней: ${reg.auditAnchors.length}` : ''}
             </div>
         </div>
         <div class="overflow-x-auto">
