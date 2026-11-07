@@ -1,6 +1,7 @@
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 import hashlib
+import json
 import uuid
 from flask import Blueprint, jsonify, request
 
@@ -11,41 +12,31 @@ from services.database import (
     ArbiterAuditModel, ArbiterShareModel, BmBetModel, BmTokenExposureModel,
     ClientModel, CustodyShareModel, DisclosureModel, DisclosureShareModel,
     EventModel, HoldModel, LinkModel, RegulatorBetModel, SessionLocal,
-    WalletReceiptModel, WalletStateModel
+    SettlementModel, WalletReceiptModel, WalletStateModel
 )
-from services.regulator import append_audit, get_or_create_account, record_double_entry
+from services.bookmaker import accept_bet_at_bookmaker, quote_at_bookmaker
+from services.regulator import (
+    append_audit, get_or_create_account, record_double_entry,
+    register_client_at_regulator, resolve_disclosure
+)
 
 client_bp = Blueprint("client_wallet", __name__)
 
 
+# =============================================================================
+# ЭТАП 1 (РЕГИСТРАЦИЯ) — СТОРОНА КЛИЕНТА
+#
+# Клиент показывает документы и получает обратно готовый набор:
+# токены по конторам, приватные ключи подписи к ним, справки допуска
+# и свою долю ключа от архива. Всё это создаёт регулятор.
+# =============================================================================
 @client_bp.route("/register", methods=["POST"])
 def register_client_flow():
-    data = request.json or {}
+    data = request.get_json(silent=True) or {}
     full_name = data.get("full_name", "Иванов Иван Иванович")
     passport = data.get("passport", "4018 123456")
     age = int(data.get("age", 23))
-
-    client_id = "cli_8a9de24b"
-    secret_s = "sec_7f9a2b4c8e1d6f3a9b0c"
-    dek = sealer_port.generate_dek()
-    shares = custody_port.split_key(dek)
-
-    tok_alpha, zk_alpha = token_policy_port.derive_token(secret_s, "bk_alpha")
-    tok_beta, zk_beta = token_policy_port.derive_token(secret_s, "bk_beta")
-    cred = cred_service_port.issue_credential(client_id, secret_s, {
-        "adult": age >= 18,
-        "kyc_ok": True,
-        "not_excluded": True,
-        "limits_ok": True,
-    })
-
-    pd_sealed = sealer_port.seal(dek, {
-        "client_id": client_id,
-        "full_name": full_name,
-        "passport": passport,
-        "age": age,
-    })
-    sealed_ref = sealer_port.seal(dek, {"client_id": client_id})
+    client_id = f"cli_{uuid.uuid4().hex[:8]}"
 
     with SessionLocal() as session:
         session.query(WalletStateModel).delete()
@@ -58,41 +49,41 @@ def register_client_flow():
         session.query(DisclosureModel).delete()
         session.flush()
 
-        # 1. Запись у Регулятора (:5001)
-        session.add(ClientModel(id=client_id, kyc_status="VERIFIED", pd_blob=pd_sealed))
-        session.add(CustodyShareModel(client_id=client_id, party="regulator", payload=shares["regulator"]))
-        session.add(LinkModel(token=tok_alpha, bookmaker_id="bk_alpha", client_ref_sealed=sealed_ref))
-        session.add(LinkModel(token=tok_beta, bookmaker_id="bk_beta", client_ref_sealed=sealed_ref))
-        get_or_create_account(session, f"client:{client_id}")
+        # --- всё делает регулятор ---------------------------------------
+        issued = register_client_at_regulator(
+            session, client_id=client_id, full_name=full_name,
+            passport=passport, age=age,
+        )
 
-        # 2. Запись у Арбитра (:5004)
-        session.add(ArbiterShareModel(client_id=client_id, share_payload=shares["arbiter"]))
+        # --- доля #3 уезжает арбитру -------------------------------------
+        session.add(ArbiterShareModel(client_id=client_id, share_payload=issued["shares"]["arbiter"]))
         session.add(ArbiterAuditModel(
             ts=datetime.now().strftime("%H:%M:%S"),
             action="SHARE_STORED",
             details=f"Получена резервная доля #3 для {client_id}",
         ))
 
-        # 3. Запись в локальном Кошельке Клиента (:5003)
+        # --- кошелёк клиента ---------------------------------------------
         session.add(WalletStateModel(
             client_id=client_id,
             full_name=full_name,
             passport=passport,
             age=age,
-            client_secret_s=secret_s,
-            client_share=shares["client"],
-            credential_id=cred["cred_id"],
-            token_alpha=tok_alpha,
-            token_beta=tok_beta,
-            zk_alpha=zk_alpha,
-            zk_beta=zk_beta,
+            book_private_keys=json.dumps(issued["private_keys"], ensure_ascii=False),
+            client_share=issued["shares"]["client"],
+            credential_id=issued["credentials"]["bk_alpha"]["cred_id"],
+            credentials_blob=json.dumps(issued["credentials"], ensure_ascii=False),
+            token_alpha=issued["tokens"]["bk_alpha"],
+            token_beta=issued["tokens"]["bk_beta"],
+            zk_alpha="", zk_beta="",
         ))
-
-        append_audit(session, "regulator", "CLIENT_REGISTERED", {"client_id": client_id})
-        append_audit(session, "regulator", "TOKEN_LINKED", {"token": tok_alpha, "bookmaker_id": "bk_alpha"})
         session.commit()
 
-    return jsonify({"client_id": client_id, "token_alpha": tok_alpha, "token_beta": tok_beta}), 201
+    return jsonify({
+        "client_id": client_id,
+        "tokens": issued["tokens"],
+        "credential_id": issued["credentials"]["bk_alpha"]["cred_id"],
+    }), 201
 
 
 @client_bp.route("/step2-deposit-all", methods=["POST"])
@@ -125,21 +116,53 @@ def step2_deposit_all():
         return jsonify({"ok": True})
 
 
+# =============================================================================
+# ЭТАП 2 (СТАВКА) — СТОРОНА КЛИЕНТА
+#
+# Порядок шагов:
+#   1. клиент берёт токен и справку допуска для этой конторы
+#   2. идёт к букмекеру, передавая токен и справку
+#   3. букмекер проверяет подпись регулятора на справке САМ, офлайн,
+#      и выдаёт котировку с обязательством на коэффициент
+#   4. клиент подписывает котировку своим ключом для этой конторы
+#   5. букмекер проверяет подпись по публичному ключу из справки
+#      и регистрирует ставку у регулятора — тот замораживает два холда
+#
+# Приватные ключи подписи не покидают кошелёк.
+# =============================================================================
 @client_bp.route("/place-bet", methods=["POST"])
 def place_bet_flow():
-    data = request.json or {}
+    data = request.get_json(silent=True) or {}
     selection = data.get("selection", "HOME_WIN")
     stake_kop = int(data.get("stake", 1000_00))
-    odds_dec = Decimal("2.40") if selection == "HOME_WIN" else Decimal("1.65")
-    odds_str = f"{odds_dec:.2f}"
-
-    potential_payout = int((Decimal(stake_kop) * odds_dec).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
-    bk_risk = potential_payout - stake_kop
 
     with SessionLocal() as session:
         w = session.query(WalletStateModel).first()
         if not w:
             return jsonify({"error": "CLIENT_NOT_REGISTERED"}), 400
+
+        # --- шаг 1: берём токен и справку для этой конторы ------------------
+        token = w.token_alpha
+        credentials = json.loads(w.credentials_blob or "{}")
+        credential = credentials.get("bk_alpha")
+        if not credential:
+            return jsonify({"error": "CREDENTIAL_NOT_FOUND"}), 400
+
+        # --- шаги 2-3: котировка у букмекера --------------------------------
+        quote = quote_at_bookmaker(
+            session, token=token, credential=credential,
+            event_id="ev_final_2026", selection=selection, stake=stake_kop,
+        )
+        if "error" in quote:
+            session.commit()                      # журнал отказа сохраняем
+            return jsonify(quote), 403
+
+        odds_dec = Decimal(quote["odds"])
+        odds_str = quote["odds"]
+        quote_id = quote["quote_id"]
+
+        potential_payout = int((Decimal(stake_kop) * odds_dec).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+        bk_risk = potential_payout - stake_kop
 
         cli_ref = f"client:{w.client_id}"
         bk_ref = "bookmaker:bk_alpha"
@@ -151,9 +174,24 @@ def place_bet_flow():
         if bk_acc.available < bk_risk:
             return jsonify({"error": "INSUFFICIENT_BOOKMAKER_LIQUIDITY"}), 400
 
-        quote_id = f"q_{uuid.uuid4().hex[:6]}"
+        # --- шаг 4: клиент подписывает котировку ----------------------------
+        signed_payload = {
+            "quote_id": quote_id, "token": token, "event_id": "ev_final_2026",
+            "selection": selection, "stake": stake_kop, "odds": odds_str,
+        }
+        private_keys = json.loads(w.book_private_keys or "{}")
+        client_sig = token_policy_port.sign_as_token(private_keys["bk_alpha"], signed_payload)
+
+        # --- шаг 5: букмекер проверяет подпись по ключу из справки ----------
+        accepted = accept_bet_at_bookmaker(
+            session, quote_id, token, client_sig,
+            credential["claims"]["public_key"],
+        )
+        if "error" in accepted:
+            session.commit()
+            return jsonify(accepted), 403
+
         bet_id = f"bet_{uuid.uuid4().hex[:6]}"
-        token = w.token_alpha
 
         # Атомарная заморозка двух холдов в Эскроу Регулятора
         cli_acc.available -= stake_kop
@@ -180,7 +218,12 @@ def place_bet_flow():
             client_hold_id=h_cli_id, bookmaker_hold_id=h_bk_id,
         ))
 
-        commitment = hashlib.sha256(f"{quote_id}:{token}:{odds_str}:{stake_kop}".encode("utf-8")).hexdigest()
+        # ЭТАП 2: обязательство пришло из котировки, вместе с солью.
+        # Раньше здесь был голый SHA-256 от предсказуемых полей: коэффициентов
+        # мало, и такой хэш подбирается перебором за секунду, то есть ничего
+        # не скрывает. Теперь хэш считается с случайной солью, а соль
+        # раскрывается только после расчёта события.
+        commitment = accepted["quote"].odds_commitment
         receipt_sig = signer_port.sign("bk_alpha", "", {"bet_id": bet_id, "token": token, "odds": odds_str})
 
         exp = session.query(BmTokenExposureModel).filter_by(token=token).first()
@@ -193,7 +236,8 @@ def place_bet_flow():
         session.add(BmBetModel(
             id=bet_id, quote_id=quote_id, token=token, event_id="ev_final_2026",
             selection=selection, stake=stake_kop, odds=odds_str,
-            odds_commitment=commitment, status="ACCEPTED", bookmaker_sig=receipt_sig,
+            odds_commitment=commitment, odds_salt="", client_sig=client_sig,
+            status="ACCEPTED", bookmaker_sig=receipt_sig,
         ))
 
         session.add(WalletReceiptModel(
@@ -206,32 +250,66 @@ def place_bet_flow():
             ev.status = "ACTIVE_BETS"
             ev.outcome = None
 
+        append_audit(session, "bk_alpha", "CLIENT_SIGNATURE_VERIFIED", {"quote_id": quote_id})
         append_audit(session, "bk_alpha", "BET_ACCEPTED", {
-            "bet_id": bet_id, "token": token, "stake": stake_kop, "odds": odds_str, "bk_risk_hold": bk_risk
+            "bet_id": bet_id, "token": token[:16], "stake": stake_kop,
+            "odds": odds_str, "bk_risk_hold": bk_risk
         })
         session.commit()
-        return jsonify({"bet_id": bet_id, "status": "ACCEPTED"}), 201
+        return jsonify({
+            "bet_id": bet_id, "status": "ACCEPTED", "quote_id": quote_id,
+            "odds": odds_str, "odds_commitment": commitment,
+        }), 201
 
 
+# =============================================================================
+# ЭТАП 4 (РАСКРЫТИЕ) — КЛИЕНТ ТОЛЬКО ПРОСИТ
+#
+# Собирать порог клиент не может: ключи подписи ему выдал регулятор,
+# а значит регулятор мог бы подписать согласие за него и раскрыть запись
+# в одиночку. Поэтому вторая доля приходит только от арбитра, а клиент
+# лишь направляет ему просьбу.
+# =============================================================================
 @client_bp.route("/disclosures/approve", methods=["POST"])
-def client_voluntary_disclosure():
+def client_request_disclosure():
+    data = request.get_json(silent=True) or {}
     with SessionLocal() as session:
-        disc = session.query(DisclosureModel).first()
-        w = session.query(WalletStateModel).first()
-        if not disc or not w:
+        disc = session.query(DisclosureModel).order_by(DisclosureModel.created_at.desc()).first()
+        if not disc:
             return jsonify({"error": "NO_ACTIVE_DISCLOSURE"}), 404
 
-        existing = session.query(DisclosureShareModel).filter_by(
-            disclosure_id=disc.id, party="client"
-        ).first()
-        if not existing:
-            session.add(DisclosureShareModel(
-                disclosure_id=disc.id, party="client", payload=w.client_share
-            ))
-        disc.status = "REVEALED"
-
-        append_audit(session, "client", "DISCLOSURE_VOLUNTARY_REVEALED", {
-            "request_id": disc.id, "parties": ["regulator", "client"]
+        append_audit(session, "client", "DISCLOSURE_CLIENT_REQUESTED_ARBITER", {
+            "request_id": disc.id, "reason": data.get("reason", "Клиент просит подтвердить свою ставку"),
         })
+        result = resolve_disclosure(session, disc.id)
         session.commit()
-        return jsonify({"status": "REVEALED"})
+        return jsonify({
+            "status": result.get("status"),
+            "collected": result.get("collected", []),
+            "message": "Просьба передана арбитру. Решение за ним.",
+        })
+
+
+@client_bp.route("/settlements", methods=["GET"])
+def client_settlements():
+    """
+    ЭТАП 3: расчётные квитанции, подписанные регулятором.
+
+    Клиент проверяет подпись сам и может предъявить квитанцию как
+    доказательство того, что и сколько было выплачено.
+    """
+    with SessionLocal() as session:
+        w = session.query(WalletStateModel).first()
+        if not w:
+            return jsonify([])
+        rows = session.query(SettlementModel).filter_by(token=w.token_alpha).all()
+        out = []
+        for r in rows:
+            body = {"bet_id": r.bet_id, "token": r.token, "event_id": r.event_id,
+                    "outcome": r.outcome, "result": r.result, "amount": r.amount}
+            out.append({
+                **body,
+                "regulator_sig": r.regulator_sig,
+                "signature_valid": signer_port.verify("regulator", "", body, r.regulator_sig),
+            })
+        return jsonify(out)
