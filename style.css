@@ -1,0 +1,72 @@
+/* Argon Cyber-FinTech Custom Styles & Smooth Animations */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap');
+
+:root {
+    --transition-speed: 0.35s;
+}
+
+body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+.font-mono {
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+}
+
+/* Плавная анимация прогресс-баров холдов */
+.hold-bar-segment {
+    transition: width 0.55s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Пульсация статусных точек микросервисов */
+.status-dot {
+    box-shadow: 0 0 8px currentColor;
+}
+
+/* Эффект размытия для криптографически скрытых данных */
+.crypto-blur-badge {
+    backdrop-filter: blur(4px);
+    user-select: none;
+}
+
+/* Стилизация полосы прокрутки в таблицах и SQL-инспекторе */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: rgba(15, 23, 42, 0.4);
+    border-radius: 6px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: rgba(99, 102, 241, 0.45);
+    border-radius: 6px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(99, 102, 241, 0.75);
+}
+
+/* Адаптация светлой темы (Light Mode) */
+body.light-mode {
+    background-color: #F8F9FA !important;
+    color: #0F172A !important;
+}
+
+body.light-mode #top-navbar {
+    background-color: rgba(255, 255, 255, 0.92) !important;
+    border-color: #E2E8F0 !important;
+}
+
+body.light-mode .argon-card {
+    background-color: #FFFFFF !important;
+    border-color: #E2E8F0 !important;
+    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.05) !important;
+}
+
+body.light-mode .sub-box {
+    background-color: #F8FAFC !important;
+    border-color: #E2E8F0 !important;
+}
