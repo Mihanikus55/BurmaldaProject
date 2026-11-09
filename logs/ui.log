@@ -1,0 +1,12 @@
+127.0.0.1 - - [09/Nov/2026 17:31:51] "GET / HTTP/1.1" 304 -
+127.0.0.1 - - [09/Nov/2026 17:57:34] code 404, message File not found
+127.0.0.1 - - [09/Nov/2026 17:57:34] "GET /.well-known/appspecific/com.chrome.devtools.json HTTP/1.1" 404 -
+127.0.0.1 - - [09/Nov/2026 17:57:57] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [09/Nov/2026 17:57:58] code 404, message File not found
+127.0.0.1 - - [09/Nov/2026 17:57:58] "GET /favicon.ico HTTP/1.1" 404 -
+127.0.0.1 - - [09/Nov/2026 17:58:32] code 404, message File not found
+127.0.0.1 - - [09/Nov/2026 17:58:32] "GET /.well-known/appspecific/com.chrome.devtools.json HTTP/1.1" 404 -
+127.0.0.1 - - [09/Nov/2026 18:00:06] "GET / HTTP/1.1" 304 -
+127.0.0.1 - - [09/Nov/2026 18:01:01] code 404, message File not found
+127.0.0.1 - - [09/Nov/2026 18:01:01] "GET /.well-known/appspecific/com.chrome.devtools.json HTTP/1.1" 404 -
+127.0.0.1 - - [09/Nov/2026 18:07:27] "GET / HTTP/1.1" 200 -

@@ -1,194 +1,212 @@
-from datetime import datetime
-from decimal import Decimal, ROUND_HALF_UP
-import uuid
-from flask import Blueprint, jsonify, request
+"""
+РЕГУЛЯТОР. Порт 8004.
 
-from common.crypto_ports import audit_chain_port, custody_port, sealer_port
-from services.database import (
-    AccountModel, AuditLogModel, BmBetModel, BmTokenExposureModel,
-    ClientModel, CustodyShareModel, DisclosureModel, DisclosureShareModel,
-    EventModel, HoldModel, LedgerEntryModel, LinkModel, RegulatorBetModel, SessionLocal
+Получает данные из двух независимых источников:
+
+  от Бурмалды (этап 1)    токен, шифротекст, доля А
+  от букмекера (этап 3)   токен, логи ставок, доля Б
+
+Пока пришла только первая таблица — архив нечитаем: одна доля XOR это
+равномерный случайный мусор, по нему о ключе не известно ничего.
+
+ЭТАП 4: регулятор соединяет две таблицы по токену, складывает доли,
+получает ключ и расшифровывает личность. Раскрыть он может ТОЛЬКО тех,
+кто реально играл: у неигравшего клиента доля Б осталась на телефоне.
+"""
+
+import json
+from datetime import datetime, timezone
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from sqlalchemy import Column, DateTime, Integer, String, Text
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from common.crypto import aes_decrypt, xor_combine
+from common.db import make_db
+
+engine, Base, SessionLocal = make_db("regulator")
+
+
+class RegistryRow(Base):
+    """Таблица 1 — от Бурмалды, приходит сразу при регистрации."""
+
+    __tablename__ = "registry"
+    token = Column(String, primary_key=True)
+    bookmaker_id = Column(String, nullable=False)
+    pd_blob = Column(Text, nullable=False)
+    share_a = Column(Text, nullable=False)
+    received_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class ReportRow(Base):
+    """Таблица 2 — от букмекера, приходит после расчёта события."""
+
+    __tablename__ = "reports"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    token = Column(String, nullable=False)
+    bookmaker_id = Column(String, nullable=False)
+    bets_json = Column(Text, nullable=False)
+    share_b = Column(Text, nullable=False)
+    received_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class RevealRow(Base):
+    """Результат этапа 4: личность, связанная со ставками."""
+
+    __tablename__ = "revealed"
+    token = Column(String, primary_key=True)
+    bookmaker_id = Column(String, nullable=False)
+    full_name = Column(String, nullable=False)
+    passport = Column(String, nullable=False)
+    birth_date = Column(String, nullable=False)
+    bets_json = Column(Text, nullable=False)
+    revealed_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+Base.metadata.create_all(engine)
+
+app = FastAPI(title="Регулятор")
+app.add_middleware(
+    CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
 )
 
-regulator_bp = Blueprint("regulator", __name__)
+
+class RegistryPayload(BaseModel):
+    token: str
+    bookmaker_id: str
+    pd_blob: str
+    share_a: str
 
 
-def append_audit(session, actor: str, action: str, payload: dict):
-    last = session.query(AuditLogModel).order_by(AuditLogModel.seq.desc()).first()
-    prev_hash = last.current_hash if last else "0" * 64
-    payload_hash, current_hash = audit_chain_port.compute_entry_hashes(prev_hash, actor, action, payload)
-    session.add(AuditLogModel(
-        ts=datetime.now().strftime("%H:%M:%S"),
-        actor=actor,
-        action=action,
-        payload_hash=payload_hash,
-        prev_hash=prev_hash,
-        current_hash=current_hash,
-    ))
+@app.post("/registry")
+def receive_registry(p: RegistryPayload):
+    """ЭТАП 1, шаг 5. Приём от Бурмалды. Открыть архив пока нельзя."""
+    with SessionLocal() as s:
+        if not s.get(RegistryRow, p.token):
+            s.add(RegistryRow(**p.model_dump()))
+            s.commit()
+    return {"stored": True, "can_decrypt_now": False,
+            "reason": "есть доля А, нет доли Б"}
 
 
-def get_or_create_account(session, owner_ref: str) -> AccountModel:
-    acc = session.query(AccountModel).filter_by(owner_ref=owner_ref).first()
-    if not acc:
-        owner_type = owner_ref.split(":")[0] if ":" in owner_ref else "custom"
-        acc = AccountModel(
-            id=f"acc_{uuid.uuid4().hex[:8]}",
-            owner_type=owner_type,
-            owner_ref=owner_ref,
-            available=0,
-            held=0,
-            version=1,
-        )
-        session.add(acc)
-        session.flush()
-    return acc
+class ReportPayload(BaseModel):
+    token: str
+    bookmaker_id: str
+    bets: list[dict]
+    share_b: str
 
 
-def record_double_entry(session, debit_ref: str, credit_ref: str, amount: int, tx_prefix: str = "tx"):
-    tx_id = f"{tx_prefix}_{uuid.uuid4().hex[:6]}"
-    session.add(LedgerEntryModel(tx_id=tx_id, account_id=credit_ref, direction="CREDIT", amount=amount))
-    session.add(LedgerEntryModel(tx_id=tx_id, account_id=debit_ref, direction="DEBIT", amount=amount))
+@app.post("/report")
+def receive_report(p: ReportPayload):
+    """ЭТАП 3, завершение. Приём от букмекера напрямую."""
+    with SessionLocal() as s:
+        s.add(ReportRow(token=p.token, bookmaker_id=p.bookmaker_id,
+                        bets_json=json.dumps(p.bets, ensure_ascii=False),
+                        share_b=p.share_b))
+        s.commit()
+    return {"stored": True, "bets": len(p.bets)}
 
 
-@regulator_bp.route("/accounts/deposit", methods=["POST"])
-def deposit_account():
-    data = request.json or {}
-    owner_ref = data["owner_ref"]
-    amount = int(data["amount"])
+@app.post("/aggregate")
+def aggregate():
+    """ЭТАП 4. Соединяем две таблицы по токену и раскрываем личность.
 
-    with SessionLocal() as session:
-        acc = get_or_create_account(session, owner_ref)
-        bank_acc = get_or_create_account(session, "external:bank")
-        bank_acc.available -= amount
-        acc.available += amount
-        acc.version += 1
+    Сделано отдельным вызовом, а не автоматически при приёме отчёта,
+    чтобы в интерфейсе это был явный, видимый шаг.
+    """
+    results = []
+    with SessionLocal() as s:
+        for reg in s.query(RegistryRow).all():
+            rep = (s.query(ReportRow)
+                   .filter_by(token=reg.token)
+                   .order_by(ReportRow.id.desc())
+                   .first())
+            if not rep:
+                results.append({"token": reg.token, "revealed": False,
+                                "reason": "отчёта от букмекера нет — клиент не играл"})
+                continue
+            if s.get(RevealRow, reg.token):
+                results.append({"token": reg.token, "revealed": True,
+                                "reason": "уже раскрыт ранее"})
+                continue
 
-        record_double_entry(session, "external:bank", owner_ref, amount, "tx_dep")
-        append_audit(session, owner_ref, "DEPOSIT", {"amount": amount})
-        session.commit()
-        return jsonify({"owner_ref": acc.owner_ref, "available": acc.available, "held": acc.held})
+            # доля А XOR доля Б = ключ AES
+            key = xor_combine(reg.share_a, rep.share_b)
+            try:
+                personal = aes_decrypt(key, reg.pd_blob)
+            except Exception as e:
+                results.append({"token": reg.token, "revealed": False,
+                                "reason": f"расшифрование не удалось: {e}"})
+                continue
 
-
-@regulator_bp.route("/events/outcome", methods=["POST"])
-def settle_event_outcome():
-    data = request.json or {}
-    outcome = data.get("outcome", "HOME_WIN")
-
-    with SessionLocal() as session:
-        ev = session.query(EventModel).filter_by(id="ev_final_2026").first()
-        active_holds = session.query(HoldModel).filter_by(status="ACTIVE").all()
-        bets = session.query(RegulatorBetModel).filter_by(status="ACCEPTED").all()
-
-        for bet in bets:
-            link = session.query(LinkModel).filter_by(token=bet.token).first()
-            unsealed = sealer_port.unseal("", link.client_ref_sealed)
-            client_ref = f"client:{unsealed['client_id']}"
-            bk_ref = f"bookmaker:{bet.bookmaker_id}"
-
-            cli_acc = get_or_create_account(session, client_ref)
-            bk_acc = get_or_create_account(session, bk_ref)
-
-            cli_hold = session.query(HoldModel).filter_by(id=bet.client_hold_id).first()
-            bk_hold = session.query(HoldModel).filter_by(id=bet.bookmaker_hold_id).first()
-
-            cli_amt = cli_hold.amount if cli_hold else bet.stake
-            bk_amt = bk_hold.amount if bk_hold else int(Decimal(bet.stake) * Decimal(bet.odds)) - bet.stake
-
-            if outcome == "VOID":
-                cli_acc.held = max(0, cli_acc.held - cli_amt)
-                cli_acc.available += cli_amt
-                cli_acc.version += 1
-
-                bk_acc.held = max(0, bk_acc.held - bk_amt)
-                bk_acc.available += bk_amt
-                bk_acc.version += 1
-                bet.status = "VOIDED"
-            elif bet.selection == outcome:
-                # Клиент выиграл: холд риска БК (1400 ₽) переходит клиенту, свой холд (1000 ₽) размораживается
-                cli_acc.held = max(0, cli_acc.held - cli_amt)
-                cli_acc.available += cli_amt + bk_amt
-                cli_acc.version += 1
-
-                bk_acc.held = max(0, bk_acc.held - bk_amt)
-                bk_acc.version += 1
-                bet.status = "SETTLED_WON"
-                record_double_entry(session, bk_ref, client_ref, bk_amt, "tx_settle_win")
-            else:
-                # Клиент проиграл: холд клиента (1000 ₽) уходит букмекеру, холд риска БК (1400 ₽) размораживается
-                cli_acc.held = max(0, cli_acc.held - cli_amt)
-                cli_acc.version += 1
-
-                bk_acc.held = max(0, bk_acc.held - bk_amt)
-                bk_acc.available += cli_amt + bk_amt
-                bk_acc.version += 1
-                bet.status = "SETTLED_LOST"
-                record_double_entry(session, client_ref, bk_ref, cli_amt, "tx_settle_loss")
-
-            if cli_hold:
-                cli_hold.status = "RELEASED" if outcome == "VOID" else ("RELEASED" if bet.status == "SETTLED_WON" else "CAPTURED")
-            if bk_hold:
-                bk_hold.status = "RELEASED" if outcome == "VOID" else ("CAPTURED" if bet.status == "SETTLED_WON" else "RELEASED")
-
-            bm_bet = session.query(BmBetModel).filter_by(id=bet.id).first()
-            if bm_bet:
-                bm_bet.status = bet.status
-                if bet.status == "SETTLED_WON":
-                    exp = session.query(BmTokenExposureModel).filter_by(token=bet.token).first()
-                    if exp:
-                        exp.won_count += 1
-
-        if ev:
-            ev.status = f"SETTLED ({outcome})"
-            ev.outcome = outcome
-
-        append_audit(session, "regulator", "EVENT_SETTLED", {"event_id": "ev_final_2026", "outcome": outcome})
-        session.commit()
-        return jsonify({"status": f"SETTLED ({outcome})", "outcome": outcome})
-
-
-@regulator_bp.route("/disclosures/solo-attempt", methods=["POST"])
-def solo_disclosure_attempt():
-    with SessionLocal() as session:
-        link = session.query(LinkModel).filter_by(bookmaker_id="bk_alpha").first()
-        if not link:
-            return jsonify({"error": "NO_LINKS_FOUND"}), 404
-
-        unsealed_preview = sealer_port.unseal("", link.client_ref_sealed)
-        reg_share = session.query(CustodyShareModel).filter_by(
-            client_id=unsealed_preview["client_id"], party="regulator"
-        ).first()
-
-        session.query(DisclosureShareModel).delete()
-        session.query(DisclosureModel).delete()
-        session.flush()
-
-        req_id = "disc_771a9c04"
-        disc = DisclosureModel(
-            id=req_id,
-            subject=link.token,
-            reason="Проверка AML / Запрос финмониторинга",
-            status="PENDING_SECOND_SHARE",
-        )
-        session.add(disc)
-        if reg_share:
-            session.add(DisclosureShareModel(
-                disclosure_id=req_id,
-                party="regulator",
-                payload=reg_share.payload,
+            s.add(RevealRow(
+                token=reg.token, bookmaker_id=reg.bookmaker_id,
+                full_name=personal["full_name"], passport=personal["passport"],
+                birth_date=personal["birth_date"], bets_json=rep.bets_json,
             ))
+            results.append({
+                "token": reg.token, "revealed": True,
+                "bookmaker_id": reg.bookmaker_id,
+                "full_name": personal["full_name"],
+                "bets": len(json.loads(rep.bets_json)),
+            })
+        s.commit()
+    return {"results": results}
 
-        append_audit(session, "audit_department", "DISCLOSURE_REQUESTED_SOLO_DENIED", {
-            "request_id": req_id,
-            "subject": link.token,
-            "collected_shares": 1,
-        })
-        session.commit()
 
-        return jsonify({
-            "error": "INSUFFICIENT_SHARES",
-            "request_id": req_id,
-            "message": (
-                "ОШИБКА 403 (INSUFFICIENT_SHARES): Собрана только 1 доля из 3 (regulator). "
-                "Через одну точку проходит бесконечно много прямых Шамира — в одиночку раскрыть личность математически невозможно!"
-            ),
-        }), 403
+@app.get("/try-read/{token}")
+def try_read(token: str):
+    """Кнопка «попробовать прочитать» для интерфейса."""
+    with SessionLocal() as s:
+        reg = s.get(RegistryRow, token)
+        rep = s.query(ReportRow).filter_by(token=token).first()
+    if not reg:
+        return {"can_read": False, "reason": "токен не найден"}
+    if not rep:
+        return {"can_read": False, "has_ciphertext": True, "has_share_a": True,
+                "has_share_b": False,
+                "reason": "есть шифротекст и доля А, доли Б нет — "
+                          "ключ не собрать, клиент не играл"}
+    return {"can_read": True, "has_ciphertext": True, "has_share_a": True,
+            "has_share_b": True, "reason": "обе доли на руках, ключ собирается"}
+
+
+@app.get("/db")
+def dump_db():
+    with SessionLocal() as s:
+        return {
+            "service": "regulator",
+            "role": "Регулятор",
+            "registry": [{
+                "token": r.token, "bookmaker_id": r.bookmaker_id,
+                "pd_blob": r.pd_blob, "share_a": r.share_a,
+            } for r in s.query(RegistryRow).all()],
+            "reports": [{
+                "token": r.token, "bookmaker_id": r.bookmaker_id,
+                "share_b": r.share_b, "bets": json.loads(r.bets_json),
+            } for r in s.query(ReportRow).all()],
+            "revealed": [{
+                "token": r.token, "bookmaker_id": r.bookmaker_id,
+                "full_name": r.full_name, "passport": r.passport,
+                "birth_date": r.birth_date, "bets": json.loads(r.bets_json),
+                "revealed_at": r.revealed_at.isoformat() if r.revealed_at else None,
+            } for r in s.query(RevealRow).all()],
+        }
+
+
+@app.post("/reset")
+def reset():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    return {"reset": True}
+
+
+@app.get("/")
+def root():
+    return {"service": "regulator", "port": 8004}
