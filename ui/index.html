@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Бурмалда — защита</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#14213D; --ink-2:#44527040; --mute:#8D97AC;
+  --paper:#FBFAF7; --card:#FFFFFF; --line:#E6E3DB;
+  --accent:#C9742E; --green:#1F7A6B; --red:#A8324A;
+  --mono:"JetBrains Mono","SF Mono",ui-monospace,monospace;
+  /* всё кегельное тянется от ширины экрана: на проекторе должно быть крупно */
+  --u:clamp(15px, 1.02vw, 27px);
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; background:var(--paper); color:var(--ink); overflow:hidden;
+  font:400 var(--u)/1.45 Inter,-apple-system,"Segoe UI",Roboto,sans-serif;
+  -webkit-font-smoothing:antialiased;
+  display:flex; flex-direction:column;
+}
+
+/* ================= заголовок шага ================= */
+.stage{
+  padding:calc(var(--u)*1.5) calc(var(--u)*2) calc(var(--u)*0.6);
+  display:flex; align-items:flex-start; gap:calc(var(--u)*1.2);
+}
+.num{
+  flex:none; display:grid; place-items:center;
+  width:calc(var(--u)*2.9); height:calc(var(--u)*2.9); border-radius:50%;
+  background:var(--ink); color:#fff; font:700 calc(var(--u)*1.2) var(--mono);
+}
+.num.idle{background:var(--line); color:var(--mute)}
+.stage .txt{min-width:0}
+.stage h1{
+  margin:0; font-size:calc(var(--u)*1.9); font-weight:700; letter-spacing:-.015em;
+  line-height:1.15;
+}
+.stage p{margin:calc(var(--u)*0.3) 0 0; font-size:calc(var(--u)*1.1); color:#56617C}
+.stage .right{margin-left:auto; text-align:right; flex:none; color:var(--mute)}
+.stage .right b{font:600 calc(var(--u)*1.1) var(--mono); color:var(--ink)}
+
+/* ================= четыре карточки ================= */
+.cards{
+  flex:1; min-height:0;
+  display:grid; grid-template-columns:repeat(4,1fr);
+  gap:calc(var(--u)*1.1); padding:0 calc(var(--u)*2);
+  align-content:stretch;
+}
+.card{
+  background:var(--card); border:2px solid var(--line); border-radius:calc(var(--u)*0.9);
+  padding:calc(var(--u)*1.1) calc(var(--u)*1.2) calc(var(--u)*1.3);
+  display:flex; flex-direction:column; gap:calc(var(--u)*0.75); height:100%; min-height:0;
+  opacity:.34; transform:scale(.985);
+  transition:opacity .45s ease, transform .45s ease, border-color .45s ease, box-shadow .45s ease;
+}
+.card.on{
+  opacity:1; transform:scale(1);
+  border-color:var(--accent); box-shadow:0 calc(var(--u)*0.5) calc(var(--u)*1.6) rgba(201,116,46,.16);
+}
+.card .role{
+  font-size:calc(var(--u)*1.25); font-weight:700; letter-spacing:-.01em;
+  display:flex; align-items:center; gap:calc(var(--u)*0.45);
+}
+.card .role small{font:500 calc(var(--u)*0.72) var(--mono); color:var(--mute); margin-left:auto}
+
+.fact{display:flex; gap:calc(var(--u)*0.55); align-items:baseline; font-size:calc(var(--u)*1.02)}
+.fact .ic{flex:none; width:calc(var(--u)*1.2); text-align:center; font-size:calc(var(--u)*1)}
+.fact .v{min-width:0; overflow-wrap:anywhere}
+.fact.dim{color:var(--mute)}
+.mono{font:500 calc(var(--u)*0.95) var(--mono)}
+.blob{
+  font:500 calc(var(--u)*0.95) var(--mono); color:var(--mute);
+  background:#F3F1EC; border-radius:calc(var(--u)*0.35);
+  padding:calc(var(--u)*0.1) calc(var(--u)*0.4);
+}
+.gone{text-decoration:line-through; color:var(--mute)}
+.hot{
+  background:var(--red); color:#fff; border-radius:calc(var(--u)*0.3);
+  padding:calc(var(--u)*0.08) calc(var(--u)*0.42);
+  font:500 calc(var(--u)*0.92) var(--mono);
+  animation:beat .9s ease-in-out infinite;
+}
+@keyframes beat{0%,100%{opacity:1}50%{opacity:.55}}
+.ok{color:var(--green); font-weight:600}
+.no{color:var(--red); font-weight:600}
+
+.reveal{
+  margin-top:auto; border:2px solid var(--green); background:#F1F8F6;
+  border-radius:calc(var(--u)*0.7); padding:calc(var(--u)*0.8) calc(var(--u)*0.9);
+  animation:pop .55s cubic-bezier(.2,1.1,.4,1);
+}
+@keyframes pop{from{transform:scale(.9);opacity:0}to{transform:scale(1);opacity:1}}
+.reveal .nm{font-size:calc(var(--u)*1.25); font-weight:700; color:#115248; line-height:1.2}
+.reveal .pp{font:500 calc(var(--u)*1) var(--mono); color:#2C6B61; margin-top:calc(var(--u)*0.25)}
+
+.locked{
+  margin-top:auto; border:2px dashed var(--line); border-radius:calc(var(--u)*0.7);
+  padding:calc(var(--u)*0.9); text-align:center; color:var(--mute);
+  font-size:calc(var(--u)*1);
+}
+.locked .big{font-size:calc(var(--u)*1.8); display:block; margin-bottom:calc(var(--u)*0.25)}
+
+/* ================= итоговая полоска ================= */
+.verdict{
+  margin:calc(var(--u)*1.1) calc(var(--u)*2) calc(var(--u)*1.3);
+  border:2px solid var(--line); border-radius:calc(var(--u)*0.9); background:var(--card);
+  display:grid; grid-template-columns:auto repeat(4,1fr); overflow:hidden;
+}
+.verdict>div{padding:calc(var(--u)*0.55) calc(var(--u)*0.9); border-left:1px solid var(--line)}
+.verdict>div:first-child{border-left:none}
+.verdict .hd{font-size:calc(var(--u)*0.85); color:var(--mute); font-weight:500}
+.verdict .lbl{
+  font-size:calc(var(--u)*0.85); color:var(--mute); display:flex; align-items:center;
+  justify-content:flex-end; font-weight:500;
+}
+.verdict .who{font-weight:700; font-size:calc(var(--u)*1.02)}
+.cellv{display:flex; align-items:center; gap:calc(var(--u)*0.4); font-size:calc(var(--u)*0.98)}
+.cellv i{
+  width:calc(var(--u)*0.62); height:calc(var(--u)*0.62); border-radius:50%;
+  background:#CFCABE; flex:none; transition:background .5s, box-shadow .5s;
+}
+.cellv.y i{background:var(--green); box-shadow:0 0 0 calc(var(--u)*0.18) rgba(31,122,107,.2)}
+.cellv.y{color:var(--ink); font-weight:600}
+.cellv.n{color:var(--mute)}
+
+/* ================= низ ================= */
+.bar{
+  display:flex; align-items:center; gap:calc(var(--u)*0.7);
+  padding:0 calc(var(--u)*2) calc(var(--u)*1.2);
+}
+.btn{
+  cursor:pointer; border:2px solid var(--ink); background:var(--ink); color:#fff;
+  border-radius:calc(var(--u)*0.55); padding:calc(var(--u)*0.5) calc(var(--u)*1.3);
+  font:600 calc(var(--u)*1.05) Inter,sans-serif;
+}
+.btn.ghost{background:transparent; color:#56617C; border-color:var(--line)}
+.btn:disabled{opacity:.4; cursor:default}
+.hint{color:var(--mute); font-size:calc(var(--u)*0.9)}
+.hint kbd{
+  font:500 calc(var(--u)*0.82) var(--mono); background:var(--card);
+  border:1px solid var(--line); border-bottom-width:2px; border-radius:calc(var(--u)*0.3);
+  padding:calc(var(--u)*0.08) calc(var(--u)*0.4);
+}
+.bar .sp{flex:1}
+.bar a{color:var(--mute); font-size:calc(var(--u)*0.9); text-decoration:none; border-bottom:1px dotted var(--line)}
+.bar a:hover{color:var(--ink)}
+
+/* ================= летящая посылка ================= */
+#fly{position:fixed; inset:0; pointer-events:none; z-index:50}
+.pkt{
+  position:absolute; transform:translate(-50%,-50%);
+  background:var(--accent); color:#fff; border-radius:calc(var(--u)*0.5);
+  padding:calc(var(--u)*0.5) calc(var(--u)*1); white-space:nowrap;
+  font:600 calc(var(--u)*1.02) Inter,sans-serif;
+  box-shadow:0 calc(var(--u)*0.5) calc(var(--u)*1.4) rgba(201,116,46,.4);
+  transition:left 1.25s cubic-bezier(.45,.05,.3,1), top 1.25s cubic-bezier(.45,.05,.3,1), opacity .35s;
+}
+.pkt.dark{background:var(--ink); box-shadow:0 calc(var(--u)*0.5) calc(var(--u)*1.4) rgba(20,33,61,.35)}
+
+.off{position:fixed; left:50%; top:0; transform:translateX(-50%);
+  background:var(--red); color:#fff; padding:4px 14px; border-radius:0 0 8px 8px;
+  font-size:13px; z-index:99}
+</style>
+</head>
+<body>
+
+<div class="stage">
+  <div class="num idle" id="num">·</div>
+  <div class="txt">
+    <h1 id="title">Приватные ставки</h1>
+    <p id="sub">Букмекер видит ставку и не видит человека. Нажмите пробел.</p>
+  </div>
+  <div class="right"><span id="counter">0 / 7</span></div>
+</div>
+
+<div class="cards">
+  <section class="card" id="c-client"></section>
+  <section class="card" id="c-burmalda"></section>
+  <section class="card" id="c-bookmaker"></section>
+  <section class="card" id="c-regulator"></section>
+</div>
+
+<div class="verdict" id="verdict"></div>
+
+<div class="bar">
+  <button class="btn" id="next">Дальше</button>
+  <button class="btn ghost" id="reset">Сброс</button>
+  <span class="hint"><kbd>пробел</kbd> дальше &nbsp;·&nbsp; <kbd>R</kbd> сброс</span>
+  <span class="sp"></span>
+  <a href="log.html">журнал по шагам →</a>&nbsp;&nbsp;<a href="detail.html">подробная версия с таблицами баз →</a>
+</div>
+
+<div id="fly"></div>
+
+<script>
+const S = {
+  client:"http://127.0.0.1:8001", burmalda:"http://127.0.0.1:8002",
+  bk_alpha:"http://127.0.0.1:8003", bk_beta:"http://127.0.0.1:8005",
+  regulator:"http://127.0.0.1:8004",
+};
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const cut = (s, n) => s ? esc(String(s).slice(0, n)) + "…" : "";
+
+const UI = {db:{}, step:0, focus:[], busy:false, keyHot:0, shareHot:0, probe:null};
+
+async function api(u, o){ const r = await fetch(u, o); const b = await r.json().catch(()=>({}));
+  if(!r.ok) throw new Error(b.detail || `HTTP ${r.status}`); return b; }
+const post = (u, d) => api(u, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(d ?? {})});
+
+function fly(a, b, label, dark){
+  const r1 = $(a)?.getBoundingClientRect(), r2 = $(b)?.getBoundingClientRect();
+  if(!r1 || !r2) return;
+  const e = document.createElement("div");
+  e.className = "pkt" + (dark ? " dark" : "");
+  e.textContent = label;
+  e.style.left = (r1.left + r1.width/2) + "px";
+  e.style.top  = (r1.top + r1.height/2) + "px";
+  $("#fly").appendChild(e);
+  requestAnimationFrame(() => {
+    e.style.left = (r2.left + r2.width/2) + "px";
+    e.style.top  = (r2.top + r2.height/2) + "px";
+  });
+  setTimeout(()=>{ e.style.opacity = "0"; }, 1300);
+  setTimeout(()=> e.remove(), 1700);
+}
+const wait = (ms) => new Promise(r => setTimeout(r, ms));
+
+// ===========================================================================
+// Сценарий защиты: семь шагов, каждый — одна мысль
+// ===========================================================================
+const STEPS = [
+{
+  title:"Клиент приходит в центр",
+  sub:"Паспорт сверили с реестром. Приложение на телефоне открылось.",
+  focus:["client","burmalda"],
+  async run(){
+    fly("#c-client", "#c-burmalda", "ФИО и паспорт");
+    await wait(900);
+    await post(S.client + "/kyc", {
+      full_name:"Иванов Иван Иванович", passport:"4509 123456", birth_date:"1998-04-12"});
+  },
+},
+{
+  title:"Телефон шифрует паспорт",
+  sub:"Ключ разрезан пополам и стёрт. Одна половина уходит в центр, вторая остаётся на телефоне.",
+  focus:["client","burmalda","regulator"],
+  async run(){
+    await post(S.client + "/tokens/generate", {bookmakers:["bk_alpha","bk_beta"]});
+    UI.keyHot = Date.now() + 5000;
+    UI.shareHot = Date.now() + 3200;
+    fly("#c-client", "#c-burmalda", "шифротекст + половина ключа");
+    await wait(1400);
+    fly("#c-burmalda", "#c-regulator", "шифротекст + половина ключа", true);
+    await wait(600);
+  },
+},
+{
+  title:"Ставка",
+  sub:"Букмекеру уходит токен, ставка и вторая половина ключа. Имени он не видит.",
+  focus:["client","bookmaker"],
+  async run(){
+    fly("#c-client", "#c-bookmaker", "токен + ставка + вторая половина");
+    await post(S.client + "/bet", {bookmaker_id:"bk_alpha", event_id:"ev_final",
+      selection:"home", stake:1000});
+    await wait(900);
+  },
+},
+{
+  title:"Событие рассчитано",
+  sub:"Считает сам букмекер. Он по-прежнему знает только токен.",
+  focus:["bookmaker"],
+  async run(){
+    await post(S.bk_alpha + "/settle", {event_id:"ev_final", outcome:"home"});
+  },
+},
+{
+  title:"Отчёт — мимо центра",
+  sub:"Ставки и вторую половину ключа букмекер отправляет прямо регулятору. Через центр они не проходят никогда.",
+  focus:["bookmaker","regulator"],
+  async run(){
+    fly("#c-bookmaker", "#c-regulator", "ставки + вторая половина ключа");
+    await post(S.bk_alpha + "/report");
+    await wait(1000);
+  },
+},
+{
+  title:"Две половины сошлись",
+  sub:"Только теперь регулятор собирает ключ и видит человека. И только того, кто действительно играл.",
+  focus:["regulator"],
+  async run(){
+    await post(S.regulator + "/aggregate");
+  },
+},
+{
+  title:"Кто может прочитать архив",
+  sub:"Проверяем не на словах: спрашиваем у каждого сервиса напрямую.",
+  focus:["burmalda","bookmaker","regulator"],
+  async run(){
+    const t = UI.db.client?.tokens?.find(x => x.bookmaker_id === "bk_alpha")?.token;
+    if(!t) return;
+    const [bu, bk, rg] = await Promise.all([
+      api(`${S.burmalda}/try-read/${t}`), api(`${S.bk_alpha}/try-read/${t}`),
+      api(`${S.regulator}/try-read/${t}`),
+    ]);
+    UI.probe = {burmalda:bu, bookmaker:bk, regulator:rg};
+  },
+},
+];
+
+// ===========================================================================
+// отрисовка
+// ===========================================================================
+const _prev = {};
+function put(id, html){ const el = $(id); if(!el || _prev[id] === html) return; _prev[id] = html; el.innerHTML = html; }
+
+const fact = (ic, v, cls = "") => `<div class="fact ${cls}"><span class="ic">${ic}</span><span class="v">${v}</span></div>`;
+const probeLine = (who) => {
+  const p = UI.probe?.[who]; if(!p) return "";
+  return `<div class="locked" style="margin-top:auto;border-style:solid;border-color:${p.can_read ? "#1F7A6B" : "#E3C6CD"};
+    color:${p.can_read ? "#115248" : "#7D2438"};text-align:left">
+    <b>${p.can_read ? "может прочитать" : "прочитать не может"}</b><br>${esc(p.reason)}</div>`;
+};
+
+function cardClient(){
+  const d = UI.db.client, on = UI.focus.includes("client");
+  const p = d?.profile, tk = d?.tokens || [];
+  const a = tk.find(t => t.bookmaker_id === "bk_alpha");
+  const keyHot = Date.now() < UI.keyHot;
+  put("#c-client", `<div class="role">Телефон клиента<small>:8001</small></div>
+    ${fact(p?.unlocked ? "🔓" : "🔒", p?.unlocked ? "<span class='ok'>приложение открыто</span>" : "заблокировано", p?.unlocked ? "" : "dim")}
+    ${p ? fact("👤", esc(p.full_name)) : ""}
+    ${a ? fact("🎫", `токен <span class="mono">${cut(a.token, 8)}</span>`) : ""}
+    ${a ? fact("🔑", `половина ключа <span class="mono">${cut(a.share_b, 6)}</span>`) : ""}
+    ${tk.length ? fact("🗝", keyHot
+        ? `целый ключ <span class="hot">стирается…</span>`
+        : `<span class="gone">целого ключа нет нигде</span>`, keyHot ? "" : "dim") : ""}`);
+  $("#c-client").classList.toggle("on", on);
+}
+
+function cardBurmalda(){
+  const d = UI.db.burmalda, on = UI.focus.includes("burmalda");
+  const n = d?.archive?.length || 0;
+  const hot = Date.now() < UI.shareHot;
+  put("#c-burmalda", `<div class="role">Центр Бурмалда<small>:8002</small></div>
+    ${fact("🗄", n ? `${n} шифротекста <span class="blob">••••••••</span>` : "база пуста", n ? "" : "dim")}
+    ${fact("👤", `личных данных: <b class="ok">0</b>`)}
+    ${fact("🧾", `логов ставок: <b class="ok">0</b>`)}
+    ${fact("🔑", hot ? `половина ключа <span class="hot">проездом</span>`
+                     : `<span class="gone">ни одной половины ключа</span>`, hot ? "" : "dim")}
+    ${probeLine("burmalda")}`);
+  $("#c-burmalda").classList.toggle("on", on);
+}
+
+function cardBookmaker(){
+  const d = UI.db.bk_alpha, on = UI.focus.includes("bookmaker");
+  const b = d?.bets?.[0], sh = d?.shares?.[0];
+  put("#c-bookmaker", `<div class="role">Букмекер<small>:8003</small></div>
+    ${b ? fact("🎫", `токен <span class="mono">${cut(b.token, 8)}</span>`) : fact("🎫", "ставок нет", "dim")}
+    ${b ? fact("🧾", `${b.stake.toLocaleString("ru-RU")} ₽ на хозяев, к ${b.odds}`) : ""}
+    ${b && b.result ? fact(b.result === "WON" ? "🟢" : "🔴",
+        b.result === "WON" ? `<span class="ok">выигрыш ${b.payout.toLocaleString("ru-RU")} ₽</span>` : "проигрыш") : ""}
+    ${sh ? fact("🔑", `половина ключа <span class="mono">${cut(sh.share_b, 6)}</span>`) : ""}
+    ${fact("👤", `имени не знает <b class="ok">никогда</b>`)}
+    ${probeLine("bookmaker")}`);
+  $("#c-bookmaker").classList.toggle("on", on);
+}
+
+function cardRegulator(){
+  const d = UI.db.regulator, on = UI.focus.includes("regulator");
+  const rv = d?.revealed?.[0];
+  const halves = (d?.registry?.length ? 1 : 0) + (d?.reports?.length ? 1 : 0);
+  put("#c-regulator", `<div class="role">Регулятор<small>:8004</small></div>
+    ${fact("🔑", `половин ключа: <b class="${halves === 2 ? "ok" : "no"}">${halves} из 2</b>`)}
+    ${rv ? `<div class="reveal">
+        <div class="nm">${esc(rv.full_name)}</div>
+        <div class="pp">${esc(rv.passport)} · ставок: ${rv.bets.length}</div>
+      </div>`
+     : `<div class="locked"><span class="big">🔒</span>
+        ${halves ? "вторая половина у клиента на телефоне" : "данных пока нет"}</div>`}
+    ${probeLine("regulator")}`);
+  $("#c-regulator").classList.toggle("on", on);
+}
+
+function cardVerdict(){
+  const cl = UI.db.client, bk = UI.db.bk_alpha, rg = UI.db.regulator;
+  const rows = [
+    ["Телефон",  !!cl?.profile, !!cl?.tokens?.length, !!cl?.profile && !!cl?.tokens?.length],
+    ["Центр",    false, false, false],
+    ["Букмекер", false, !!bk?.bets?.length, false],
+    ["Регулятор",!!rg?.revealed?.length, !!rg?.reports?.length, !!rg?.revealed?.length],
+  ];
+  const cell = (v) => `<div class="cellv ${v ? "y" : "n"}"><i></i>${v ? "да" : "нет"}</div>`;
+  put("#verdict",
+    `<div class="hd">кто что знает</div>` + rows.map(r => `<div class="who">${r[0]}</div>`).join("") +
+    `<div class="lbl">личность</div>` + rows.map(r => cell(r[1])).join("") +
+    `<div class="lbl">ставки</div>`   + rows.map(r => cell(r[2])).join("") +
+    `<div class="lbl">связь</div>`    + rows.map(r => cell(r[3])).join(""));
+}
+
+function render(){
+  cardClient(); cardBurmalda(); cardBookmaker(); cardRegulator(); cardVerdict();
+  $("#counter").textContent = `${UI.step} / ${STEPS.length}`;
+  const n = $("#num");
+  n.textContent = UI.step || "·";
+  n.classList.toggle("idle", UI.step === 0);
+}
+
+async function poll(){
+  await Promise.all(Object.entries(S).map(async ([k, u]) => {
+    try { UI.db[k] = await api(u + "/db"); } catch { UI.db[k] = null; }
+  }));
+  render();
+}
+
+// ===========================================================================
+// управление
+// ===========================================================================
+async function next(){
+  if(UI.busy || UI.step >= STEPS.length) return;
+  UI.busy = true; $("#next").disabled = true;
+  const st = STEPS[UI.step];
+  UI.step += 1; UI.focus = st.focus;
+  $("#title").textContent = st.title;
+  $("#sub").textContent = st.sub;
+  render();
+  try { await st.run(); } catch(e){ $("#sub").textContent = "Ошибка: " + e.message; }
+  await poll();
+  UI.busy = false;
+  $("#next").disabled = UI.step >= STEPS.length;
+  if(UI.step >= STEPS.length) $("#next").textContent = "Готово";
+}
+
+async function resetAll(){
+  UI.busy = true;
+  await Promise.all(Object.values(S).map(u => post(u + "/reset").catch(()=>{})));
+  UI.step = 0; UI.focus = []; UI.keyHot = 0; UI.shareHot = 0; UI.probe = null;
+  $("#title").textContent = "Приватные ставки";
+  $("#sub").textContent = "Букмекер видит ставку и не видит человека. Нажмите пробел.";
+  $("#next").disabled = false; $("#next").textContent = "Дальше";
+  await poll();
+  UI.busy = false;
+}
+
+$("#next").onclick = next;
+$("#reset").onclick = resetAll;
+document.addEventListener("keydown", (e) => {
+  if(e.code === "Space" || e.code === "ArrowRight" || e.code === "Enter"){ e.preventDefault(); next(); }
+  if(e.key === "r" || e.key === "R" || e.key === "к" || e.key === "К"){ resetAll(); }
+});
+
+(async function(){ await resetAll(); setInterval(poll, 1200); })();
+</script>
+</body>
+</html>
