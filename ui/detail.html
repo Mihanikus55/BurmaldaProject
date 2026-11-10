@@ -1,0 +1,771 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Бурмалда — как проходят данные</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* Палитра та же, что в презентациях проекта */
+:root{
+  --ink:#14213D; --ink-2:#3C4A68; --ink-3:#7C879E;
+  --paper:#FBFAF7; --card:#FFFFFF; --line:#E3E0D8;
+  --accent:#C9742E;      /* действие, движение данных */
+  --accent-2:#1F7A6B;    /* «знает», раскрыто */
+  --dark:#B9B3A6;        /* «не знает» */
+  --warn:#A8324A;
+  --mono:"JetBrains Mono","SF Mono",ui-monospace,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--paper); color:var(--ink);
+  font:400 14px/1.5 Inter,-apple-system,"Segoe UI",Roboto,sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+
+/* ---------- шапка ---------- */
+header{
+  display:flex; align-items:baseline; gap:16px; flex-wrap:wrap;
+  padding:18px 24px; border-bottom:1px solid var(--line); background:var(--card);
+  position:sticky; top:0; z-index:40;
+}
+header h1{font-size:18px; font-weight:700; margin:0; letter-spacing:-.01em}
+header .sub{color:var(--ink-3); font-size:13px}
+header .spacer{flex:1}
+.hbtn{
+  font:500 13px Inter,sans-serif; padding:7px 14px; border-radius:7px; cursor:pointer;
+  border:1px solid var(--line); background:var(--card); color:var(--ink-2);
+}
+.hbtn:hover{border-color:var(--ink-3)}
+.hbtn.primary{background:var(--ink); color:#fff; border-color:var(--ink)}
+.hbtn.primary:hover{background:#1d2e55}
+.hbtn:disabled{opacity:.45; cursor:default}
+
+/* ---------- полоска «кто что знает» ---------- */
+.knows{
+  display:grid; grid-template-columns:repeat(4,1fr); gap:1px;
+  background:var(--line); border-bottom:1px solid var(--line);
+}
+.knows .cell{background:var(--card); padding:12px 18px}
+.knows .who{font-weight:600; font-size:13px; margin-bottom:8px}
+.knows .lamps{display:flex; gap:14px; flex-wrap:wrap}
+.lamp{display:flex; align-items:center; gap:6px; font-size:11.5px; color:var(--ink-3)}
+.lamp i{
+  width:9px; height:9px; border-radius:50%; background:var(--dark);
+  box-shadow:none; transition:background .35s, box-shadow .35s;
+}
+.lamp.on i{background:var(--accent-2); box-shadow:0 0 0 3px rgba(31,122,107,.18)}
+.lamp.on{color:var(--ink)}
+
+/* ---------- основная сетка ---------- */
+main{display:grid; grid-template-columns:238px 1fr; gap:0; align-items:start}
+.steps{
+  padding:18px 16px; border-right:1px solid var(--line);
+  position:sticky; top:57px; max-height:calc(100vh - 57px); overflow:auto;
+}
+.steps h2{font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--ink-3); margin:0 0 12px}
+.step{
+  display:block; width:100%; text-align:left; margin-bottom:7px; cursor:pointer;
+  border:1px solid var(--line); background:var(--card); border-radius:8px;
+  padding:9px 11px; font:500 13px Inter,sans-serif; color:var(--ink);
+  transition:border-color .2s, background .2s;
+}
+.step:hover:not(:disabled){border-color:var(--accent); background:#fff}
+.step:disabled{opacity:.4; cursor:default}
+.step .n{
+  display:inline-grid; place-items:center; width:18px; height:18px; border-radius:50%;
+  background:var(--paper); border:1px solid var(--line);
+  font:600 10px var(--mono); color:var(--ink-3); margin-right:8px; vertical-align:1px;
+}
+.step.done{border-color:var(--accent-2); background:#F4F9F8}
+.step.done .n{background:var(--accent-2); border-color:var(--accent-2); color:#fff}
+.steps fieldset{border:1px solid var(--line); border-radius:8px; padding:9px 10px 11px; margin:0 0 10px}
+.steps legend{font-size:10.5px; text-transform:uppercase; letter-spacing:.07em; color:var(--ink-3); padding:0 4px}
+.steps label{display:block; font-size:11px; color:var(--ink-3); margin:7px 0 3px}
+.steps select,.steps input{
+  width:100%; padding:5px 7px; border:1px solid var(--line); border-radius:6px;
+  font:400 12px Inter,sans-serif; background:var(--card); color:var(--ink);
+}
+
+/* ---------- панели ---------- */
+.board{padding:18px 20px 28px}
+.panels{display:grid; grid-template-columns:repeat(4,1fr); gap:14px; align-items:start}
+.panel{
+  background:var(--card); border:1px solid var(--line); border-radius:11px;
+  overflow:hidden; min-width:0;
+}
+.panel>.head{
+  padding:11px 13px; border-bottom:1px solid var(--line);
+  display:flex; align-items:center; gap:8px;
+}
+.panel>.head .role{font-weight:600; font-size:13.5px}
+.panel>.head .port{font:400 10.5px var(--mono); color:var(--ink-3); margin-left:auto}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--accent-2);flex:none}
+.dot.off{background:var(--warn)}
+.panel>.body{padding:11px 13px 14px; display:grid; gap:11px}
+.lock{font-size:15px; line-height:1}
+
+.blk{display:grid; gap:5px}
+.blk>.t{font-size:10.5px; text-transform:uppercase; letter-spacing:.07em; color:var(--ink-3)}
+.kv{display:grid; grid-template-columns:auto 1fr; gap:3px 9px; font-size:12.5px}
+.kv dt{color:var(--ink-3)}
+.kv dd{margin:0; min-width:0; overflow-wrap:anywhere}
+
+table{width:100%; border-collapse:collapse; font-size:11.5px}
+th{
+  text-align:left; font-weight:500; font-size:10px; text-transform:uppercase;
+  letter-spacing:.05em; color:var(--ink-3); padding:0 6px 4px 0; border-bottom:1px solid var(--line);
+}
+td{padding:4px 6px 4px 0; border-bottom:1px solid #F1EFE9; vertical-align:top}
+tr:last-child td{border-bottom:none}
+.hex{font:400 11px var(--mono); color:var(--ink-2); cursor:help}
+.hex.ghost{color:var(--ink-3)}
+.gone{text-decoration:line-through; color:var(--ink-3); font:400 11px var(--mono)}
+.flash{
+  font:500 11px var(--mono); color:#fff; background:var(--warn);
+  padding:1px 5px; border-radius:4px; display:inline-block;
+  animation:pulse 1s ease-in-out infinite;
+}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
+
+.note{font-size:11px; color:var(--ink-3); line-height:1.45}
+.counter{
+  display:flex; justify-content:space-between; gap:8px; font-size:11.5px;
+  padding:4px 7px; background:var(--paper); border-radius:6px;
+}
+.counter b{font:600 11.5px var(--mono)}
+.counter.zero b{color:var(--accent-2)}
+.counter.some b{color:var(--warn)}
+
+.tabs{display:flex; gap:5px; margin-bottom:2px}
+.tab{
+  cursor:pointer; border:1px solid var(--line); background:var(--card); border-radius:6px;
+  padding:3px 9px; font:500 11.5px Inter,sans-serif; color:var(--ink-3);
+}
+.tab.sel{background:var(--ink); border-color:var(--ink); color:#fff}
+
+.tryread{
+  width:100%; cursor:pointer; border:1px dashed var(--line); background:transparent;
+  border-radius:7px; padding:7px; font:500 11.5px Inter,sans-serif; color:var(--ink-2);
+}
+.tryread:hover{border-color:var(--accent); color:var(--accent)}
+.verdict{font-size:11px; line-height:1.45; padding:7px 8px; border-radius:7px}
+.verdict.no{background:#FBF2F4; color:#7D2438; border:1px solid #F0DCE1}
+.verdict.yes{background:#F1F8F6; color:#145D51; border:1px solid #D4E8E3}
+
+.reveal{
+  border:1px solid var(--accent-2); background:#F1F8F6; border-radius:9px; padding:9px 10px;
+  animation:pop .5s ease-out;
+}
+@keyframes pop{from{transform:scale(.96);opacity:0}to{transform:scale(1);opacity:1}}
+.reveal .nm{font-weight:700; font-size:13.5px; color:#145D51}
+
+/* ---------- лента ---------- */
+.log{margin-top:18px; background:var(--card); border:1px solid var(--line); border-radius:11px}
+.log>.head{padding:10px 13px; border-bottom:1px solid var(--line); font-weight:600; font-size:13px}
+.log>.list{max-height:220px; overflow:auto; padding:4px 0}
+.log .row{display:grid; grid-template-columns:62px 1fr; gap:10px; padding:5px 13px; font-size:12px}
+.log .row+.row{border-top:1px solid #F4F2EC}
+.log .ts{font:400 11px var(--mono); color:var(--ink-3)}
+.log .row.err .msg{color:var(--warn)}
+.log .row.ok .msg strong{color:var(--accent-2)}
+
+/* ---------- летящие стрелки ---------- */
+#fly{position:fixed; inset:0; pointer-events:none; z-index:60}
+.pkt{
+  position:absolute; transform:translate(-50%,-50%);
+  background:var(--accent); color:#fff; border-radius:7px;
+  padding:5px 9px; font:500 11px Inter,sans-serif; white-space:nowrap;
+  box-shadow:0 6px 18px rgba(201,116,46,.35);
+  transition:left 1s cubic-bezier(.4,.1,.3,1), top 1s cubic-bezier(.4,.1,.3,1), opacity .3s;
+}
+.pkt.dim{background:var(--ink-2); box-shadow:0 6px 18px rgba(20,33,61,.3)}
+
+@media (max-width:1180px){
+  main{grid-template-columns:1fr}
+  .steps{position:static; max-height:none; border-right:none; border-bottom:1px solid var(--line)}
+  .panels{grid-template-columns:repeat(2,1fr)}
+  .knows{grid-template-columns:repeat(2,1fr)}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Бурмалда</h1>
+  <span class="sub">как проходят данные: четыре сервиса, четыре базы</span>
+  <span class="spacer"></span>
+  <button class="hbtn primary" id="btn-auto">Проиграть весь сценарий</button>
+  <button class="hbtn" id="btn-reset">Сброс</button>
+</header>
+
+<div class="knows" id="knows"></div>
+
+<main>
+  <div class="steps">
+    <h2>Шаги</h2>
+
+    <fieldset>
+      <legend>Клиент</legend>
+      <label>ФИО</label>
+      <input id="f-name" value="Иванов Иван Иванович">
+      <label>Паспорт</label>
+      <input id="f-passport" value="4509 123456">
+      <label>Дата рождения</label>
+      <input id="f-birth" value="1998-04-12">
+      <label>Подставить другого</label>
+      <select id="f-preset">
+        <option value="ok">пройдёт проверку</option>
+        <option value="minor">16 лет — откажут</option>
+        <option value="excluded">самозапрет — откажут</option>
+      </select>
+    </fieldset>
+
+    <button class="step" id="s2"><span class="n">1</span>Проверить и разблокировать</button>
+    <button class="step" id="s3"><span class="n">2</span>Сгенерировать токены</button>
+
+    <fieldset>
+      <legend>Ставка</legend>
+      <label>Букмекер</label>
+      <select id="f-bk"><option value="bk_alpha">БК Альфа</option><option value="bk_beta">БК Бета</option></select>
+      <label>Событие</label>
+      <select id="f-ev"></select>
+      <label>Исход</label>
+      <select id="f-sel">
+        <option value="home">хозяева</option>
+        <option value="draw">ничья</option>
+        <option value="away">гости</option>
+      </select>
+      <label>Сумма, ₽</label>
+      <input id="f-stake" type="number" value="1000" min="1">
+    </fieldset>
+
+    <button class="step" id="s4"><span class="n">3</span>Сделать ставку</button>
+
+    <fieldset>
+      <legend>Расчёт</legend>
+      <label>Победил исход</label>
+      <select id="f-outcome">
+        <option value="home">хозяева</option>
+        <option value="draw">ничья</option>
+        <option value="away">гости</option>
+      </select>
+    </fieldset>
+
+    <button class="step" id="s5"><span class="n">4</span>Рассчитать событие</button>
+    <button class="step" id="s6"><span class="n">5</span>Отправить регулятору</button>
+    <button class="step" id="s7"><span class="n">6</span>Агрегировать и раскрыть</button>
+  </div>
+
+  <div class="board">
+    <div class="panels">
+      <section class="panel" id="p-client"></section>
+      <section class="panel" id="p-burmalda"></section>
+      <section class="panel" id="p-bookmaker"></section>
+      <section class="panel" id="p-regulator"></section>
+    </div>
+
+    <div class="log">
+      <div class="head">Лента событий</div>
+      <div class="list" id="logList"></div>
+    </div>
+  </div>
+</main>
+
+<div id="fly"></div>
+
+<script>
+// ===========================================================================
+// Адреса сервисов. Страница ничего не вычисляет — она дёргает эндпоинты
+// и показывает GET /db каждой базы как есть.
+// ===========================================================================
+const S = {
+  client:    "http://127.0.0.1:8001",
+  burmalda:  "http://127.0.0.1:8002",
+  bk_alpha:  "http://127.0.0.1:8003",
+  bk_beta:   "http://127.0.0.1:8005",
+  regulator: "http://127.0.0.1:8004",
+};
+
+const PRESETS = {
+  ok:       ["Иванов Иван Иванович", "4509 123456", "1998-04-12"],
+  minor:    ["Петров Пётр Петрович",  "4612 778899", "2010-09-01"],
+  excluded: ["Кузнецов Олег Николаевич", "4455 010203", "1985-01-30"],
+};
+
+// локальное состояние самой страницы (не данные сервисов)
+const UI = {
+  db: {},                 // последние дампы
+  offline: {},            // какие сервисы не отвечают
+  bkTab: "bk_alpha",      // выбранная вкладка букмекера
+  keyFlash: {},           // token -> {key, until} для показа «ключ стёрт»
+  verdicts: {},           // panel -> текст ответа try-read
+  done: {},               // какие шаги уже нажаты
+  busy: false,
+};
+
+// ---------------------------------------------------------------------------
+// утилиты
+// ---------------------------------------------------------------------------
+const $ = (s) => document.querySelector(s);
+
+// Пишем в DOM только если разметка реально изменилась. Иначе опрос раз в
+// 900 мс перезапускал бы анимации и сбрасывал подсказки под курсором.
+const _last = {};
+function setHTML(el, html) {
+  if (!el || _last[el.id] === html) return;
+  _last[el.id] = html;
+  el.innerHTML = html;
+}
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const hx  = (s, n = 14) => s ? `<span class="hex" title="${esc(s)}">${esc(String(s).slice(0, n))}…</span>` : "—";
+const money = (n) => (n ?? 0).toLocaleString("ru-RU");
+
+function log(msg, kind = "") {
+  const t = new Date().toLocaleTimeString("ru-RU", {hour12:false});
+  const row = document.createElement("div");
+  row.className = "row " + kind;
+  row.innerHTML = `<span class="ts">${t}</span><span class="msg">${msg}</span>`;
+  $("#logList").prepend(row);
+}
+
+async function api(url, opts) {
+  const r = await fetch(url, opts);
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(body.detail || body.reason || `HTTP ${r.status}`);
+  return body;
+}
+const post = (url, data) => api(url, {
+  method: "POST",
+  headers: {"Content-Type": "application/json"},
+  body: JSON.stringify(data ?? {}),
+});
+
+// летящая посылка между панелями
+function fly(fromSel, toSel, label, dim = false) {
+  const a = $(fromSel)?.getBoundingClientRect();
+  const b = $(toSel)?.getBoundingClientRect();
+  if (!a || !b) return;
+  const el = document.createElement("div");
+  el.className = "pkt" + (dim ? " dim" : "");
+  el.textContent = label;
+  el.style.left = (a.left + a.width / 2) + "px";
+  el.style.top  = (a.top + 60) + "px";
+  $("#fly").appendChild(el);
+  requestAnimationFrame(() => {
+    el.style.left = (b.left + b.width / 2) + "px";
+    el.style.top  = (b.top + 60) + "px";
+  });
+  setTimeout(() => { el.style.opacity = "0"; }, 1000);
+  setTimeout(() => el.remove(), 1400);
+}
+
+// ---------------------------------------------------------------------------
+// опрос всех баз
+// ---------------------------------------------------------------------------
+async function poll() {
+  await Promise.all(Object.entries(S).map(async ([name, url]) => {
+    try {
+      UI.db[name] = await api(url + "/db");
+      UI.offline[name] = false;
+    } catch {
+      UI.offline[name] = true;
+    }
+  }));
+  render();
+}
+
+// ---------------------------------------------------------------------------
+// отрисовка
+// ---------------------------------------------------------------------------
+function head(role, port, name) {
+  const off = UI.offline[name];
+  return `<div class="head">
+    <span class="dot ${off ? "off" : ""}" title="${off ? "сервис не отвечает" : "сервис на связи"}"></span>
+    <span class="role">${role}</span>
+    <span class="port">:${port}</span>
+  </div>`;
+}
+
+function counter(label, n, zeroIsGood = true) {
+  const cls = n === 0 ? (zeroIsGood ? "zero" : "") : (zeroIsGood ? "some" : "");
+  return `<div class="counter ${cls}"><span>${label}</span><b>${n}</b></div>`;
+}
+
+function tryReadBlock(panel, label) {
+  const v = UI.verdicts[panel];
+  return `<button class="tryread" data-tryread="${panel}">${label}</button>` +
+    (v ? `<div class="verdict ${v.can ? "yes" : "no"}">${esc(v.text)}</div>` : "");
+}
+
+function renderClient() {
+  const d = UI.db.client;
+  const el = $("#p-client");
+  if (!d) { setHTML(el, head("Телефон клиента", 8001, "client") + `<div class="body"><div class="note">нет связи</div></div>`); return; }
+  const p = d.profile;
+  const unlocked = p && p.unlocked;
+
+  const keyRow = (tk) => {
+    const f = UI.keyFlash[tk];
+    if (f && Date.now() < f.until) return `<span class="flash" title="${esc(f.key)}">${esc(f.key.slice(0, 8))}…</span>`;
+    return `<span class="gone">стёрт</span>`;
+  };
+
+  setHTML(el, head("Телефон клиента", 8001, "client") + `<div class="body">
+    <div class="blk">
+      <div class="t">состояние приложения</div>
+      <div style="font-weight:600">
+        <span class="lock">${unlocked ? "🔓" : "🔒"}</span>
+        ${unlocked ? "Разблокировано" : "Заблокировано"}
+      </div>
+    </div>
+    ${p ? `<div class="blk">
+      <div class="t">персональные данные — свои</div>
+      <dl class="kv">
+        <dt>ФИО</dt><dd>${esc(p.full_name)}</dd>
+        <dt>паспорт</dt><dd>${esc(p.passport)}</dd>
+        <dt>рождён</dt><dd>${esc(p.birth_date)}</dd>
+      </dl>
+    </div>` : `<div class="note">клиент ещё не приходил</div>`}
+    ${d.tokens.length ? `<div class="blk">
+      <div class="t">токены и доли</div>
+      <table><thead><tr><th>контора</th><th>токен</th><th>доля Б</th><th>ключ AES</th></tr></thead><tbody>
+      ${d.tokens.map((t) => `<tr>
+        <td>${esc(t.bookmaker_id.replace("bk_", ""))}</td>
+        <td>${hx(t.token, 10)}</td>
+        <td>${hx(t.share_b, 10)}</td>
+        <td>${keyRow(t.token)}</td>
+      </tr>`).join("")}
+      </tbody></table>
+      <div class="note">Ключ существовал несколько строк кода и стёрт сразу после
+      разделения на доли. Больше его нет нигде — ни здесь, ни у кого.</div>
+    </div>` : ""}
+  </div>`);
+}
+
+function renderBurmalda() {
+  const d = UI.db.burmalda;
+  const el = $("#p-burmalda");
+  if (!d) { setHTML(el, head("Центр Бурмалда", 8002, "burmalda") + `<div class="body"><div class="note">нет связи</div></div>`); return; }
+
+  setHTML(el, head("Центр Бурмалда", 8002, "burmalda") + `<div class="body">
+    <div class="blk">
+      <div class="t">токен → шифротекст</div>
+      ${d.archive.length ? `<table><thead><tr><th>токен</th><th>шифротекст</th><th>доля А</th></tr></thead><tbody>
+      ${d.archive.map((a) => `<tr>
+        <td>${hx(a.token, 10)}</td>
+        <td><span class="hex ghost" title="${esc(a.pd_blob)}">${esc(a.pd_blob.slice(0, 12))}…</span></td>
+        <td>${a.share_a ? `<span class="flash" title="${esc(a.share_a)}">${esc(a.share_a.slice(0, 8))}…</span>`
+                        : `<span class="gone">переслана</span>`}</td>
+      </tr>`).join("")}</tbody></table>` : `<div class="note">пусто</div>`}
+      <div class="note">Шифротекст прочитать нечем: ключ был только на телефоне.</div>
+    </div>
+    ${counter("персональных данных в базе", d.personal_data_stored)}
+    ${counter("логов ставок в базе", d.bet_logs_stored)}
+    ${d.kyc_checks.length ? `<div class="blk">
+      <div class="t">журнал проверок</div>
+      <table><thead><tr><th>паспорт</th><th>вердикт</th></tr></thead><tbody>
+      ${d.kyc_checks.slice(0, 5).map((k) => `<tr>
+        <td class="hex">${esc(k.passport_masked)}</td>
+        <td style="color:${k.verdict === "APPROVED" ? "#145D51" : "#A8324A"}">
+          ${k.verdict === "APPROVED" ? "допущен" : esc(k.reason || "отказ")}</td>
+      </tr>`).join("")}</tbody></table>
+      <div class="note">ФИО в журнал не пишется, номер паспорта — только маской.</div>
+    </div>` : ""}
+    ${tryReadBlock("burmalda", "Попробовать прочитать архив")}
+  </div>`);
+}
+
+function renderBookmaker() {
+  const name = UI.bkTab;
+  const d = UI.db[name];
+  const el = $("#p-bookmaker");
+  const title = name === "bk_alpha" ? "БК Альфа" : "БК Бета";
+  const port = name === "bk_alpha" ? 8003 : 8005;
+  const tabs = `<div class="tabs">
+    <button class="tab ${name === "bk_alpha" ? "sel" : ""}" data-bk="bk_alpha">Альфа</button>
+    <button class="tab ${name === "bk_beta" ? "sel" : ""}" data-bk="bk_beta">Бета</button>
+  </div>`;
+
+  if (!d) { setHTML(el, head(title, port, name) + `<div class="body">${tabs}<div class="note">нет связи</div></div>`); return; }
+
+  setHTML(el, head(title, port, name) + `<div class="body">
+    ${tabs}
+    <div class="blk">
+      <div class="t">линия</div>
+      <table><thead><tr><th>событие</th><th>1</th><th>X</th><th>2</th><th></th></tr></thead><tbody>
+      ${d.events.map((e) => `<tr>
+        <td>${esc(e.title.split(":")[0])}</td>
+        <td>${e.odds.home}</td><td>${e.odds.draw}</td><td>${e.odds.away}</td>
+        <td>${e.status === "SETTLED" ? `<b style="color:#145D51">${esc(e.outcome)}</b>` : "—"}</td>
+      </tr>`).join("")}</tbody></table>
+    </div>
+    <div class="blk">
+      <div class="t">ставки</div>
+      ${d.bets.length ? `<table><thead><tr><th>токен</th><th>исход</th><th>сумма</th><th>к</th><th>итог</th></tr></thead><tbody>
+      ${d.bets.map((b) => `<tr>
+        <td>${hx(b.token, 10)}</td><td>${esc(b.selection)}</td>
+        <td>${money(b.stake)}</td><td>${b.odds}</td>
+        <td>${b.result ? (b.result === "WON"
+            ? `<b style="color:#145D51">+${money(b.payout)}</b>`
+            : `<span style="color:#A8324A">—</span>`) : "ожидает"}</td>
+      </tr>`).join("")}</tbody></table>` : `<div class="note">ставок нет</div>`}
+    </div>
+    ${d.shares.length ? `<div class="blk">
+      <div class="t">доли Б от клиентов</div>
+      <table><tbody>${d.shares.map((s) => `<tr>
+        <td>${hx(s.token, 10)}</td><td><span class="hex ghost" title="${esc(s.share_b)}">${esc(s.share_b.slice(0, 12))}…</span></td>
+      </tr>`).join("")}</tbody></table>
+      <div class="note">Шифротекста у букмекера нет, поэтому доля бесполезна.</div>
+    </div>` : ""}
+    ${counter("персональных данных", d.personal_data_stored)}
+    ${counter("шифротекстов", d.ciphertexts_stored)}
+    ${tryReadBlock(name, "Попробовать прочитать архив")}
+  </div>`);
+}
+
+function renderRegulator() {
+  const d = UI.db.regulator;
+  const el = $("#p-regulator");
+  if (!d) { setHTML(el, head("Регулятор", 8004, "regulator") + `<div class="body"><div class="note">нет связи</div></div>`); return; }
+
+  setHTML(el, head("Регулятор", 8004, "regulator") + `<div class="body">
+    <div class="blk">
+      <div class="t">таблица 1 — от Бурмалды</div>
+      ${d.registry.length ? `<table><thead><tr><th>токен</th><th>шифротекст</th><th>доля А</th></tr></thead><tbody>
+      ${d.registry.map((r) => `<tr>
+        <td>${hx(r.token, 10)}</td>
+        <td><span class="hex ghost" title="${esc(r.pd_blob)}">${esc(r.pd_blob.slice(0, 10))}…</span></td>
+        <td>${hx(r.share_a, 10)}</td>
+      </tr>`).join("")}</tbody></table>` : `<div class="note">пусто</div>`}
+    </div>
+    <div class="blk">
+      <div class="t">таблица 2 — от букмекера, напрямую</div>
+      ${d.reports.length ? `<table><thead><tr><th>токен</th><th>ставок</th><th>доля Б</th></tr></thead><tbody>
+      ${d.reports.map((r) => `<tr>
+        <td>${hx(r.token, 10)}</td><td>${r.bets.length}</td><td>${hx(r.share_b, 10)}</td>
+      </tr>`).join("")}</tbody></table>` : `<div class="note">отчётов нет — доли Б нет</div>`}
+    </div>
+    <div class="blk">
+      <div class="t">доля А ⊕ доля Б</div>
+      ${d.revealed.length ? d.revealed.map((r) => `<div class="reveal">
+        <div class="nm">${esc(r.full_name)}</div>
+        <dl class="kv" style="margin-top:4px">
+          <dt>паспорт</dt><dd>${esc(r.passport)}</dd>
+          <dt>рождён</dt><dd>${esc(r.birth_date)}</dd>
+          <dt>токен</dt><dd>${hx(r.token, 12)}</dd>
+          <dt>ставок</dt><dd>${r.bets.length}</dd>
+        </dl>
+      </div>`).join("") : `<div class="verdict no">
+        <span class="lock">🔒</span> ключ не собран.
+        ${d.registry.length ? "Есть доля А, доли Б нет — она у клиента на телефоне." : "Данных пока нет."}
+      </div>`}
+    </div>
+    ${tryReadBlock("regulator", "Попробовать прочитать архив")}
+  </div>`);
+}
+
+function renderKnows() {
+  const cl = UI.db.client, bu = UI.db.burmalda, rg = UI.db.regulator;
+  const bk = UI.db[UI.bkTab];
+  const anyBets = !!(bk && bk.bets.length);
+
+  const rows = [
+    ["Телефон клиента", !!(cl && cl.profile), !!(cl && cl.tokens.length), !!(cl && cl.profile && cl.tokens.length)],
+    ["Центр Бурмалда", false, false, false],
+    ["Букмекер", false, anyBets, false],
+    ["Регулятор", !!(rg && rg.revealed.length), !!(rg && rg.reports.length), !!(rg && rg.revealed.length)],
+  ];
+  const lamp = (on, text) => `<span class="lamp ${on ? "on" : ""}"><i></i>${text}</span>`;
+  setHTML($("#knows"), rows.map(([who, id, bets, link]) => `<div class="cell">
+    <div class="who">${who}</div>
+    <div class="lamps">${lamp(id, "личность")}${lamp(bets, "ставки")}${lamp(link, "связь")}</div>
+  </div>`).join(""));
+}
+
+function renderSteps() {
+  for (const id of ["s2","s3","s4","s5","s6","s7"]) {
+    const b = $("#" + id);
+    if (b) b.classList.toggle("done", !!UI.done[id]);
+  }
+}
+
+function render() {
+  renderKnows(); renderClient(); renderBurmalda(); renderBookmaker(); renderRegulator(); renderSteps();
+}
+
+// ---------------------------------------------------------------------------
+// шаги
+// ---------------------------------------------------------------------------
+async function guard(fn) {
+  if (UI.busy) return;
+  UI.busy = true;
+  document.querySelectorAll(".step").forEach((b) => b.disabled = true);
+  try { await fn(); } catch (e) { log(`ошибка: ${esc(e.message)}`, "err"); }
+  document.querySelectorAll(".step").forEach((b) => b.disabled = false);
+  UI.busy = false;
+  await poll();
+}
+
+async function stepKyc() {
+  const body = {
+    full_name: $("#f-name").value.trim(),
+    passport: $("#f-passport").value.trim(),
+    birth_date: $("#f-birth").value.trim(),
+  };
+  log(`Клиент пришёл в центр: ${esc(body.full_name)}`);
+  fly("#p-client", "#p-burmalda", "ФИО + паспорт");
+  await new Promise((r) => setTimeout(r, 700));
+  const res = await post(S.client + "/kyc", body);
+  if (res.unlocked) {
+    log(`Проверено по реестру. <strong>Приложение разблокировано</strong>`, "ok");
+    UI.done.s2 = true;
+  } else {
+    log(`Отказ: ${esc(res.reason)}`, "err");
+    UI.done.s2 = false;
+  }
+}
+
+async function stepTokens() {
+  log("Телефон генерирует токены, ключи и шифротексты");
+  const res = await post(S.client + "/tokens/generate", {bookmakers: ["bk_alpha", "bk_beta"]});
+  for (const it of res.issued) {
+    UI.keyFlash[it.token] = {key: it.key_wiped_demo_only, until: Date.now() + 4000};
+    log(`${esc(it.bookmaker_id)}: токен <strong>${esc(it.token)}</strong>, ключ стёрт, доля Б осталась на телефоне`, "ok");
+  }
+  fly("#p-client", "#p-burmalda", "токен + шифротекст + доля А");
+  await new Promise((r) => setTimeout(r, 1100));
+  fly("#p-burmalda", "#p-regulator", "токен + шифротекст + доля А", true);
+  log("Бурмалда переслала всё регулятору и обнулила долю А у себя");
+  UI.done.s3 = true;
+}
+
+async function stepBet() {
+  const bk = $("#f-bk").value;
+  UI.bkTab = bk;
+  const body = {
+    bookmaker_id: bk,
+    event_id: $("#f-ev").value,
+    selection: $("#f-sel").value,
+    stake: parseInt($("#f-stake").value, 10),
+  };
+  fly("#p-client", "#p-bookmaker", "токен + ставка + доля Б");
+  const res = await post(S.client + "/bet", body);
+  log(`Ставка принята у ${esc(bk)}: токен <strong>${esc(res.sent_token)}</strong>, коэффициент ${res.odds}. Доля Б уехала букмекеру`, "ok");
+  UI.done.s4 = true;
+}
+
+async function stepSettle() {
+  const bk = UI.bkTab;
+  const res = await post(S[bk] + "/settle", {
+    event_id: $("#f-ev").value, outcome: $("#f-outcome").value,
+  });
+  log(`Событие рассчитано: победил «${esc(res.outcome)}», ставок обработано ${res.settled_bets}`, "ok");
+  UI.done.s5 = true;
+}
+
+async function stepReport() {
+  const bk = UI.bkTab;
+  fly("#p-bookmaker", "#p-regulator", "логи ставок + доля Б");
+  const res = await post(S[bk] + "/report");
+  log(`Букмекер отправил логи и долю Б <strong>напрямую регулятору</strong>, мимо Бурмалды (токенов: ${res.reported.length})`, "ok");
+  UI.done.s6 = true;
+}
+
+async function stepAggregate() {
+  const res = await post(S.regulator + "/aggregate");
+  for (const r of res.results) {
+    if (r.revealed) log(`Регулятор собрал ключ: ${esc(r.token)} → <strong>${esc(r.full_name || "раскрыт ранее")}</strong>`, "ok");
+    else log(`${esc(r.token)} не раскрыт: ${esc(r.reason)}`);
+  }
+  UI.done.s7 = true;
+}
+
+// ---------------------------------------------------------------------------
+// обработчики
+// ---------------------------------------------------------------------------
+$("#s2").onclick = () => guard(stepKyc);
+$("#s3").onclick = () => guard(stepTokens);
+$("#s4").onclick = () => guard(stepBet);
+$("#s5").onclick = () => guard(stepSettle);
+$("#s6").onclick = () => guard(stepReport);
+$("#s7").onclick = () => guard(stepAggregate);
+
+$("#btn-reset").onclick = () => guard(async () => {
+  await Promise.all(Object.values(S).map((u) => post(u + "/reset").catch(() => {})));
+  UI.keyFlash = {}; UI.verdicts = {}; UI.done = {};
+  $("#logList").innerHTML = "";
+  log("Все базы очищены");
+  await loadEvents();
+});
+
+$("#btn-auto").onclick = () => guard(async () => {
+  const seq = [stepKyc, stepTokens, stepBet, stepSettle, stepReport, stepAggregate];
+  for (const fn of seq) {
+    await fn();
+    await poll();
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+});
+
+$("#f-preset").onchange = (e) => {
+  const [n, p, b] = PRESETS[e.target.value];
+  $("#f-name").value = n; $("#f-passport").value = p; $("#f-birth").value = b;
+};
+
+$("#f-bk").onchange = async (e) => { UI.bkTab = e.target.value; await loadEvents(); render(); };
+
+document.addEventListener("click", async (e) => {
+  const tab = e.target.closest("[data-bk]");
+  if (tab) { UI.bkTab = tab.dataset.bk; render(); return; }
+
+  const tr = e.target.closest("[data-tryread]");
+  if (tr) {
+    const who = tr.dataset.tryread;
+    const url = S[who];
+    const d = UI.db[who];
+    // берём любой известный токен
+    let token = null;
+    const cl = UI.db.client;
+    if (cl && cl.tokens.length) {
+      const match = cl.tokens.find((t) => who.startsWith("bk_") ? t.bookmaker_id === who : true);
+      token = (match || cl.tokens[0]).token;
+    }
+    if (!token) { UI.verdicts[who] = {can: false, text: "токенов ещё нет"}; render(); return; }
+    try {
+      const res = await api(`${url}/try-read/${token}`);
+      UI.verdicts[who] = {can: !!res.can_read, text: res.reason};
+      log(`Попытка прочитать архив у «${esc(who)}»: ${esc(res.reason)}`, res.can_read ? "" : "err");
+    } catch (err) {
+      UI.verdicts[who] = {can: false, text: err.message};
+    }
+    render();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// старт
+// ---------------------------------------------------------------------------
+async function loadEvents() {
+  const bk = $("#f-bk").value;
+  try {
+    const evs = await api(`${S[bk]}/events`);
+    $("#f-ev").innerHTML = evs.map((e) =>
+      `<option value="${esc(e.id)}">${esc(e.title)}</option>`).join("");
+  } catch {
+    $("#f-ev").innerHTML = `<option value="ev_final">нет связи с букмекером</option>`;
+  }
+}
+
+(async function init() {
+  log("Страница опрашивает четыре базы напрямую. Всё, что здесь видно — их настоящее содержимое.");
+  await loadEvents();
+  await poll();
+  setInterval(poll, 900);
+})();
+</script>
+</body>
+</html>

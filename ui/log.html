@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Бурмалда — журнал</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#14213D; --body:#3A4663; --mute:#8C96AB;
+  --paper:#FBFAF7; --card:#FFFFFF; --line:#E6E3DB; --line-2:#F2F0EA;
+  --client:#2F5FA8; --center:#C9742E; --book:#7A5AA8; --reg:#1F7A6B; --bad:#A8324A;
+  --mono:"JetBrains Mono","SF Mono",ui-monospace,monospace;
+}
+*{box-sizing:border-box}
+html{scroll-padding-top:104px}
+body{
+  margin:0; background:var(--paper); color:var(--ink);
+  font:400 16px/1.55 Inter,-apple-system,"Segoe UI",Roboto,sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+
+/* ---------- шапка ---------- */
+.top{
+  position:sticky; top:0; z-index:20; background:rgba(251,250,247,.93);
+  backdrop-filter:blur(8px); border-bottom:1px solid var(--line);
+}
+.top .in{
+  max-width:1080px; margin:0 auto; padding:14px 28px;
+  display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+}
+.top h1{margin:0; font-size:19px; font-weight:700; letter-spacing:-.01em}
+.top .sub{color:var(--mute); font-size:14px}
+.top .sp{flex:1}
+.b{
+  cursor:pointer; border:1px solid var(--line); background:var(--card); color:var(--body);
+  border-radius:8px; padding:8px 16px; font:600 14px Inter,sans-serif;
+}
+.b:hover{border-color:var(--mute)}
+.b.go{background:var(--ink); border-color:var(--ink); color:#fff}
+.b.go:hover{background:#1e3157}
+.b:disabled{opacity:.4; cursor:default}
+
+/* ---------- лента ---------- */
+.feed{max-width:1080px; margin:0 auto; padding:34px 28px 120px}
+
+.stage{scroll-margin-top:104px; margin:46px 0 22px; display:flex; align-items:baseline; gap:14px}
+.stage:first-child{margin-top:6px}
+.stage .n{
+  font:700 13px var(--mono); color:#fff; background:var(--ink);
+  border-radius:6px; padding:3px 9px; flex:none;
+}
+.stage h2{margin:0; font-size:23px; font-weight:700; letter-spacing:-.015em}
+.stage p{margin:0; color:var(--mute); font-size:15px}
+
+.row{scroll-margin-top:104px; display:grid; grid-template-columns:76px 1fr; gap:16px; position:relative}
+.row .time{
+  font:400 13px var(--mono); color:var(--mute); text-align:right;
+  padding-top:16px; white-space:nowrap;
+}
+.row .side{position:relative}
+.row .side::before{
+  content:""; position:absolute; left:-9px; top:0; bottom:0; width:2px; background:var(--line-2);
+}
+.row:last-child .side::before{bottom:auto; height:24px}
+.row .side::after{
+  content:""; position:absolute; left:-14px; top:21px;
+  width:12px; height:12px; border-radius:50%; background:var(--mute);
+  border:3px solid var(--paper);
+}
+.row.client .side::after{background:var(--client)}
+.row.center .side::after{background:var(--center)}
+.row.book   .side::after{background:var(--book)}
+.row.reg    .side::after{background:var(--reg)}
+.row.bad    .side::after{background:var(--bad)}
+
+.ent{
+  background:var(--card); border:1px solid var(--line); border-radius:11px;
+  padding:13px 17px 15px; margin-bottom:12px;
+  animation:in .4s ease-out;
+}
+@keyframes in{from{opacity:0; transform:translateY(7px)}to{opacity:1; transform:none}}
+.ent .who{
+  font:600 12px Inter,sans-serif; text-transform:uppercase; letter-spacing:.06em;
+  margin-bottom:3px;
+}
+.client .who{color:var(--client)} .center .who{color:var(--center)}
+.book .who{color:var(--book)}     .reg .who{color:var(--reg)}
+.bad .who{color:var(--bad)}
+.ent .ttl{font-size:17px; font-weight:600; letter-spacing:-.01em; line-height:1.35}
+.ent ul{margin:9px 0 0; padding:0; list-style:none; display:grid; gap:4px}
+.ent li{
+  font-size:14.5px; color:var(--body); display:grid;
+  grid-template-columns:auto 1fr; gap:9px; align-items:baseline;
+}
+.ent li .k{color:var(--mute); white-space:nowrap}
+.mono{font:500 13.5px var(--mono); overflow-wrap:anywhere}
+.ok{color:var(--reg); font-weight:600}
+.no{color:var(--bad); font-weight:600}
+.del{text-decoration:line-through; color:var(--mute)}
+
+/* отказ */
+.ent.deny{border-color:#EEDCE1; background:#FDF6F7}
+
+/* передача данных */
+.ent.move{border-style:dashed; background:#FCFBF8}
+.ent.move .ttl{display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:16px}
+.ent.move .arrow{color:var(--center); font-weight:700}
+.pill{
+  font:600 12.5px Inter,sans-serif; border-radius:6px; padding:2px 9px;
+  border:1px solid currentColor;
+}
+.pill.client{color:var(--client)} .pill.center{color:var(--center)}
+.pill.book{color:var(--book)}     .pill.reg{color:var(--reg)}
+.pack{margin-top:11px; display:grid; gap:5px}
+.pack .it{
+  display:grid; grid-template-columns:22px 1fr; gap:8px; align-items:baseline;
+  font-size:14.5px;
+}
+.pack .it .i{text-align:center}
+.pack .it.hid{color:var(--mute)}
+.notsent{
+  margin-top:11px; padding-top:10px; border-top:1px dashed var(--line);
+  font-size:14px; color:var(--mute);
+}
+.notsent b{color:var(--body); font-weight:600}
+
+/* итог */
+.sum{
+  scroll-margin-top:104px; margin-top:30px; background:var(--card); border:2px solid var(--ink);
+  border-radius:13px; overflow:hidden;
+}
+.sum h3{margin:0; padding:14px 20px; font-size:17px; border-bottom:1px solid var(--line)}
+table{width:100%; border-collapse:collapse}
+th,td{padding:11px 20px; text-align:left; font-size:15px; border-top:1px solid var(--line-2)}
+th{font:600 12px Inter,sans-serif; text-transform:uppercase; letter-spacing:.05em; color:var(--mute); border-top:none}
+td.who{font-weight:600}
+.yes{color:var(--reg); font-weight:600}
+.nope{color:var(--mute)}
+
+.hintbar{
+  max-width:1080px; margin:0 auto; padding:0 28px; color:var(--mute); font-size:14px;
+}
+kbd{
+  font:500 12.5px var(--mono); background:var(--card); border:1px solid var(--line);
+  border-bottom-width:2px; border-radius:5px; padding:1px 6px;
+}
+.err{
+  max-width:1080px; margin:20px auto; padding:14px 20px; border-radius:10px;
+  background:#FDF6F7; border:1px solid #EEDCE1; color:#7D2438; font-size:15px;
+}
+</style>
+</head>
+<body>
+
+<div class="top"><div class="in">
+  <h1>Бурмалда</h1>
+  <span class="sub">журнал: что происходит на каждом шаге</span>
+  <span class="sp"></span>
+  <button class="b go" id="play">Запустить</button>
+  <button class="b" id="step">Шаг</button>
+  <button class="b" id="reset">Сброс</button>
+</div></div>
+
+<div class="hintbar" style="padding-top:12px">
+  <kbd>пробел</kbd> следующий шаг &nbsp;·&nbsp; <kbd>R</kbd> сброс&nbsp;&nbsp;·&nbsp;&nbsp; <a href="index.html" style="color:#8C96AB">крупная версия для защиты →</a>
+</div>
+
+<div class="feed" id="feed"></div>
+
+<script>
+const S = {
+  client:"http://127.0.0.1:8001", burmalda:"http://127.0.0.1:8002",
+  bk_alpha:"http://127.0.0.1:8003", bk_beta:"http://127.0.0.1:8005",
+  regulator:"http://127.0.0.1:8004",
+};
+const NAME = {client:"Телефон клиента", center:"Центр Бурмалда",
+              book:"Букмекер «Альфа»", reg:"Регулятор", bad:"Центр Бурмалда"};
+
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c)=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const cut = (s, n=18) => s ? esc(String(s).slice(0,n)) + "…" : "—";
+const now = () => new Date().toLocaleTimeString("ru-RU", {hour12:false});
+const wait = (ms) => new Promise(r=>setTimeout(r,ms));
+
+async function api(u,o){ const r=await fetch(u,o); const b=await r.json().catch(()=>({}));
+  if(!r.ok) throw new Error(b.detail||`HTTP ${r.status}`); return b; }
+const post=(u,d)=>api(u,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(d??{})});
+
+// ---------------------------------------------------------------------------
+// кирпичики ленты
+// ---------------------------------------------------------------------------
+let stageNo = 0;
+const feed = () => $("#feed");
+
+function scroll(el){ el.scrollIntoView({behavior:"smooth", block:"center"}); }
+
+function stage(title, sub){
+  stageNo += 1;
+  const d = document.createElement("div");
+  d.className = "stage";
+  d.innerHTML = `<span class="n">ЭТАП ${stageNo}</span>
+    <div><h2>${esc(title)}</h2><p>${esc(sub)}</p></div>`;
+  feed().appendChild(d); scroll(d);
+}
+
+/** Обычная запись: кто, что сделал, подробности. */
+function say(actor, title, lines = [], extra = ""){
+  const row = document.createElement("div");
+  row.className = "row " + actor;
+  row.innerHTML = `<div class="time">${now()}</div><div class="side">
+    <div class="ent ${extra}">
+      <div class="who">${esc(NAME[actor])}</div>
+      <div class="ttl">${title}</div>
+      ${lines.length ? `<ul>${lines.map(([k,v]) =>
+        `<li><span class="k">${esc(k)}</span><span>${v}</span></li>`).join("")}</ul>` : ""}
+    </div></div>`;
+  feed().appendChild(row); scroll(row);
+}
+
+/** Передача данных: что именно поехало и что из этого читается. */
+function move(from, to, items, notSent){
+  const row = document.createElement("div");
+  row.className = "row " + from;
+  row.innerHTML = `<div class="time">${now()}</div><div class="side">
+    <div class="ent move">
+      <div class="ttl">
+        <span class="pill ${from}">${esc(NAME[from])}</span>
+        <span class="arrow">→</span>
+        <span class="pill ${to}">${esc(NAME[to])}</span>
+      </div>
+      <div class="pack">${items.map(([readable, text]) =>
+        `<div class="it ${readable ? "" : "hid"}">
+           <span class="i">${readable ? "👁" : "🔒"}</span><span>${text}</span>
+         </div>`).join("")}</div>
+      ${notSent ? `<div class="notsent"><b>Не отправлено:</b> ${esc(notSent)}</div>` : ""}
+    </div></div>`;
+  feed().appendChild(row); scroll(row);
+}
+
+function summary(rows){
+  const d = document.createElement("div");
+  d.className = "sum";
+  d.innerHTML = `<h3>Кто что знает в итоге</h3>
+    <table><tr><th>сторона</th><th>личность</th><th>ставки</th><th>связь</th></tr>
+    ${rows.map(r=>`<tr><td class="who">${esc(r[0])}</td>
+      ${r.slice(1).map(v=>`<td class="${v?"yes":"nope"}">${v?"да":"нет"}</td>`).join("")}</tr>`).join("")}
+    </table>`;
+  feed().appendChild(d); scroll(d);
+}
+
+function fail(msg){
+  const d = document.createElement("div");
+  d.className = "err";
+  d.textContent = "Сервисы не отвечают: " + msg + ". Запустите  python run_all.py";
+  feed().appendChild(d); scroll(d);
+}
+
+// ---------------------------------------------------------------------------
+// сценарий
+// ---------------------------------------------------------------------------
+const ST = {};   // что собрали по ходу: токены, доли и прочее
+
+const SCRIPT = [
+
+// ===================== ЭТАП 1 =====================
+() => stage("Регистрация", "Один раз. Клиент приходит в центр и получает токены."),
+
+async () => {
+  say("client", "В центр пришёл клиент", [
+    ["ФИО", "Иванов Иван Иванович"],
+    ["паспорт", `<span class="mono">4509 123456</span>`],
+    ["рождён", "12.04.1998"],
+  ]);
+  move("client", "center", [[true, "ФИО, паспорт, дата рождения"]]);
+  const r = await post(S.client + "/kyc", {
+    full_name:"Иванов Иван Иванович", passport:"4509 123456", birth_date:"1998-04-12"});
+  if(!r.unlocked) throw new Error(r.reason);
+  say("center", "Проверка пройдена, приложение разблокировано", [
+    ["паспорт", `<span class="ok">найден в реестре</span>`],
+    ["возраст", `<span class="ok">${r.age} лет</span>`],
+    ["самозапрет", `<span class="ok">не числится</span>`],
+  ]);
+},
+
+async () => {
+  const res = await post(S.client + "/tokens/generate", {bookmakers:["bk_alpha","bk_beta"]});
+  ST.alpha = res.issued.find(i=>i.bookmaker_id==="bk_alpha");
+  ST.beta  = res.issued.find(i=>i.bookmaker_id==="bk_beta");
+
+  say("client", "Телефон шифрует паспорт — своим ключом на каждую контору", [
+    ["для «Альфы»", `<span class="mono">${esc(ST.alpha.token)}</span>`],
+    ["для «Беты»",  `<span class="mono">${esc(ST.beta.token)}</span>`],
+  ]);
+  say("client", "Ключ разрезан пополам и стёрт", [
+    ["ключ был", `<span class="mono del">${esc(ST.alpha.key_wiped_demo_only)}</span>`],
+    ["доля А", `<span class="mono">${cut(ST.alpha.share_a_sent, 24)}</span>`],
+    ["доля Б", `<span class="mono">${cut(ST.alpha.share_b_kept, 24)}</span>`],
+  ]);
+},
+
+async () => {
+  move("client", "center", [
+    [true,  `токен <span class="mono">${esc(ST.alpha.token)}</span>`],
+    [false, `шифротекст <span class="mono">${cut(ST.alpha.pd_blob, 28)}</span>`],
+    [true,  `доля А <span class="mono">${cut(ST.alpha.share_a_sent, 20)}</span>`],
+  ], "ФИО, паспорт, доля Б");
+  move("center", "reg", [
+    [true,  "токен"],
+    [false, "шифротекст"],
+    [true,  "доля А"],
+  ]);
+  say("center", "Долю А у себя обнулили", [
+    ["осталось в базе", "токен и шифротекст"],
+    ["долей ключа", `<span class="no">ни одной</span>`],
+  ]);
+},
+
+// ===================== ЭТАП 2 =====================
+() => stage("Ставка", "Клиент играет у «Альфы». «Бета» в этом не участвует."),
+
+async () => {
+  move("client", "book", [
+    [true, `токен <span class="mono">${esc(ST.alpha.token)}</span>`],
+    [true, "событие «Финал: Спартак — Зенит», исход «хозяева», 1 000 ₽"],
+    [false, `доля Б <span class="mono">${cut(ST.alpha.share_b_kept, 20)}</span>`],
+  ], "ФИО, паспорт, шифротекст, токен у «Беты»");
+  const r = await post(S.client + "/bet", {bookmaker_id:"bk_alpha",
+    event_id:"ev_final", selection:"home", stake:1000});
+  ST.odds = r.odds;
+  say("book", "Ставка принята", [
+    ["коэффициент", String(r.odds)],
+    ["известно о клиенте", `токен <span class="mono">${esc(r.sent_token)}</span>`],
+  ]);
+},
+
+// ===================== ЭТАП 3 =====================
+() => stage("Расчёт", "Считает сам букмекер, затем отчитывается регулятору."),
+
+async () => {
+  const r = await post(S.bk_alpha + "/settle", {event_id:"ev_final", outcome:"home"});
+  say("book", "Событие рассчитано", [
+    ["победили", "хозяева"],
+    ["результат", `<span class="ok">выигрыш ${Math.round(1000*ST.odds).toLocaleString("ru-RU")} ₽</span>`],
+  ]);
+},
+
+async () => {
+  move("book", "reg", [
+    [true, `токен <span class="mono">${esc(ST.alpha.token)}</span>`],
+    [true, "ставки по этому токену и их результаты"],
+    [true, `доля Б <span class="mono">${cut(ST.alpha.share_b_kept, 20)}</span>`],
+  ], "ФИО, паспорт");
+  const r = await post(S.bk_alpha + "/report");
+  say("book", "Отчёт ушёл <b>напрямую регулятору, мимо центра</b>", [
+    ["токенов в отчёте", String(r.reported.length)],
+  ]);
+},
+
+// ===================== ЭТАП 4 =====================
+() => stage("Раскрытие", "Регулятор соединяет две таблицы по токену."),
+
+async () => {
+  say("reg", "Обе половины ключа на руках", [
+    ["доля А", "от центра, этап 1"],
+    ["доля Б", "от букмекера, этап 3"],
+    ["", `доля А <b>⊕</b> доля Б = ключ AES`],
+  ]);
+  const r = await post(S.regulator + "/aggregate");
+  const good = r.results.find(x=>x.revealed);
+  const skip = r.results.find(x=>!x.revealed);
+  if(good){
+    say("reg", `Архив расшифрован: <span class="ok">${esc(good.full_name)}</span>`, [
+      ["токен", `<span class="mono">${esc(good.token)}</span>`],
+      ["паспорт", `<span class="mono">4509 123456</span>`],
+      ["ставок привязано", String(good.bets)],
+    ]);
+  }
+  if(skip){
+    say("reg", `Токен <span class="mono">${esc(skip.token)}</span> остался закрытым`, [
+      ["у «Беты»", "клиент не играл"],
+      ["доля Б", "осталась на телефоне"],
+    ]);
+  }
+},
+
+() => {
+  summary([
+    ["Телефон клиента", true, true, true],
+    ["Центр Бурмалда", false, false, false],
+    ["Букмекер «Альфа»", false, true, false],
+    ["Букмекер «Бета»", false, false, false],
+    ["Регулятор", true, true, true],
+  ]);
+},
+];
+
+// ---------------------------------------------------------------------------
+// управление
+// ---------------------------------------------------------------------------
+let i = 0, busy = false, auto = false;
+
+async function one(){
+  if(busy || i >= SCRIPT.length) return false;
+  busy = true; $("#step").disabled = true; $("#play").disabled = true;
+  try { await SCRIPT[i++](); }
+  catch(e){ fail(e.message); i = SCRIPT.length; auto = false; }
+  busy = false;
+  const done = i >= SCRIPT.length;
+  $("#step").disabled = done;
+  $("#play").disabled = done;
+  if(done) $("#play").textContent = "Готово";
+  return !done;
+}
+
+$("#step").onclick = () => { auto = false; one(); };
+
+$("#play").onclick = async () => {
+  auto = true;
+  while(auto && await one()) await wait(1400);
+};
+
+$("#reset").onclick = async () => {
+  auto = false;
+  await Promise.all(Object.values(S).map(u => post(u + "/reset").catch(()=>{})));
+  feed().innerHTML = ""; i = 0; stageNo = 0;
+  for(const k in ST) delete ST[k];
+  $("#step").disabled = false; $("#play").disabled = false;
+  $("#play").textContent = "Запустить";
+  window.scrollTo({top:0, behavior:"smooth"});
+};
+
+document.addEventListener("keydown", (e)=>{
+  if(e.code==="Space"||e.code==="ArrowRight"||e.code==="Enter"){ e.preventDefault(); auto=false; one(); }
+  if(e.key==="r"||e.key==="R"||e.key==="к"||e.key==="К") $("#reset").click();
+});
+
+$("#reset").click();
+</script>
+</body>
+</html>
